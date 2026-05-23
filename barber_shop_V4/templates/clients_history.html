@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clients History | Elite CRM</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .search-input {
+            background: rgba(10, 38, 22, 0.4) !important;
+            border: 1px solid rgba(255, 215, 0, 0.3) !important;
+            color: #fff !important;
+        }
+        .search-input:focus {
+            border-color: var(--gold-bright) !important;
+            box-shadow: 0 0 10px var(--neon-glow) !important;
+        }
+        .tx-history-box {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 10px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+        /* إجبار الجدول البوتستراب على التوافق مع الثيم الزمردي */
+        #clientsTable { --bs-table-bg: transparent !important; }
+        #clientsTable th {
+            color: var(--gold-bright) !important;
+            border-bottom: 2px solid rgba(255, 215, 0, 0.3) !important;
+            background-color: transparent !important;
+            font-weight: 700;
+        }
+        #clientsTable td {
+            background-color: transparent !important;
+            border-bottom: 1px solid rgba(163, 194, 177, 0.08) !important;
+            padding: 15px 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center">
+        <span class="navbar-brand text-gold fw-bold fs-4 m-0">📜 CLIENTS CRM & ARCHIVE</span>
+        <a href="/cashier" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage">🔙 Back to POS</a>
+    </nav>
+
+    <div class="container py-4" style="max-width: 1050px;">
+        <div class="luxury-card">
+            
+            <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+                <h4 class="text-gold fw-bold m-0">👥 Customer Profiles & Receipts Archive</h4>
+                <input type="text" id="searchInput" class="form-control search-input w-auto px-4 py-2 rounded-pill" placeholder="🔍 Fast filter clients..." onkeyup="filterClients()">
+            </div>
+
+            <div class="table-responsive">
+                <table class="table align-middle" id="clientsTable">
+                    <thead>
+                        <tr>
+                            <th>Client Profiles & History Timeline</th>
+                            <th>Contact Phone</th>
+                            <th class="text-center">Loyalty Points</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in clients %}
+                        <tr class="client-row">
+                            <td style="width: 60%;">
+                                <div class="fw-bold fs-5 text-white client-name">{{ c.name }}</div>
+                                
+                                <div class="tx-history-box">
+                                    <small class="text-gold d-block mb-2">🎬 Visit Records ({{ c.transactions|length }}):</small>
+                                    <ul class="list-unstyled m-0" style="max-height: 160px; overflow-y: auto;">
+                                        {% for tx in c.transactions %}
+                                        <li class="d-flex justify-content-between align-items-center border-bottom border-secondary py-1 small">
+                                            <span class="text-muted">{{ tx.timestamp.strftime('%Y-%m-%d %I:%M %p') }}</span>
+                                            <span class="text-white-50 text-truncate mx-2" style="max-width: 200px;">{{ tx.services }}</span>
+                                            <span class="badge bg-dark border text-sage px-2 py-0 me-2" style="font-size: 0.7rem;">{{ tx.payment_method }}</span>
+                                            <span class="text-gold fw-bold me-3">${{ tx.total_price }}</span>
+                                            <a href="/receipt/{{ tx.id }}" target="_blank" class="btn btn-sm btn-nav-outline py-0 px-2" style="font-size: 0.75rem;">View 🧾</a>
+                                        </li>
+                                        {% else %}
+                                        <li class="text-muted small">No transactions found for this customer.</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="text-sage client-phone">{{ c.phone }}</div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge text-dark fw-bold fs-6 px-3 py-2" style="background: var(--gold-bright);">
+                                    ⭐ {{ c.points }} Pts
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function filterClients() {
+            let input = document.getElementById("searchInput").value.toLowerCase();
+            let rows = document.querySelectorAll(".client-row");
+            rows.forEach(row => {
+                let name = row.querySelector(".client-name").innerText.toLowerCase();
+                let phone = row.querySelector(".client-phone").innerText.toLowerCase();
+                if (name.includes(input) || phone.includes(input)) { row.style.display = ""; } 
+                else { row.style.display = "none"; }
+            });
+        }
+    </script>
+</body>
+</html>

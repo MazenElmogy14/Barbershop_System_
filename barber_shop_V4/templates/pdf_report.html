@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ 'rtl' if current_lang == 'ar' else 'ltr' }}">
+<head>
+    <meta charset="UTF-8">
+    <title>Elite Barber Report</title>
+    <style>
+        @page { size: A4; margin: 2cm; }
+        body { font-family: Arial, sans-serif; color: #333; line-height: 1.6; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #D4AF37; padding-bottom: 10px; }
+        .header h1 { margin: 0; color: #1a1a1a; font-size: 28px; text-transform: uppercase; }
+        .header p { margin: 5px 0; color: #666; font-size: 14px; }
+        
+        .summary-box { background-color: #f9f9f9; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 30px; }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 16px; }
+        .summary-row.total { font-size: 20px; font-weight: bold; border-top: 2px solid #ccc; padding-top: 10px; margin-top: 10px; color: #000; }
+        
+        .section-title { font-size: 18px; color: #D4AF37; border-bottom: 1px solid #eee; margin-top: 30px; padding-bottom: 5px; margin-bottom: 15px; text-transform: uppercase; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: {{ 'right' if current_lang == 'ar' else 'left' }}; }
+        th { background-color: #f2f2f2; color: #333; font-weight: bold; }
+        .text-right { text-align: {{ 'left' if current_lang == 'ar' else 'right' }}; }
+        .text-bold { font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>👑 {{ t('elite_owner', 'ELITE BARBER SHOP') }}</h1>
+        <p>{{ t('net_profit_breakdown', 'Financial Report') }} | {{ date_label }}</p>
+        <p>{{ t('date', 'Generated on:') }} {{ today_date }}</p>
+    </div>
+
+    <div class="summary-box">
+        <div class="summary-row">
+            <span>{{ t('plus_total_shop_revenue', '➕ Total Shop Revenue:') }}</span>
+            <span>${{ "%.2f"|format(total_revenue) }}</span>
+        </div>
+        <div class="summary-row" style="color: #d9534f;">
+            <span>{{ t('minus_barbers_cut', '➖ Barbers Cut (Commissions):') }}</span>
+            <span>-${{ "%.2f"|format(total_commissions) }}</span>
+        </div>
+        <div class="summary-row" style="color: #d9534f;">
+            <span>{{ t('minus_shop_expenses', '➖ Shop Expenses:') }}</span>
+            <span>-${{ "%.2f"|format(total_expenses) }}</span>
+        </div>
+        <div class="summary-row total">
+            <span>{{ t('equals_net_profit', 'EQUALS NET PROFIT:') }}</span>
+            <span style="color: #5cb85c;">${{ "%.2f"|format(net_profit) }}</span>
+        </div>
+    </div>
+
+    <div class="section-title">📊 {{ t('revenue_details', 'Revenue Transactions') }}</div>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>{{ t('client', 'Client') }}</th>
+                <th>{{ t('services', 'Services') }}</th>
+                <th>{{ t('by', 'Barber') }}</th>
+                <th>{{ t('method', 'Method') }}</th>
+                <th class="text-right">{{ t('amount', 'Amount') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in transactions %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td class="text-bold">{{ tx.name }}</td>
+                <td>{{ tx.services }}</td>
+                <td>{{ tx.barber.name if tx.barber else '-' }}</td>
+                <td>{{ tx.payment_method }}</td>
+                <td class="text-right text-bold">${{ "%.2f"|format(tx.total_price) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="text-align: center;">{{ t('no_revenue_data', 'No revenue data.') }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if expenses_list %}
+    <div class="section-title">📉 {{ t('expense_details', 'Expense Details') }}</div>
+    <table>
+        <thead>
+            <tr>
+                <th>{{ t('date', 'Date') }}</th>
+                <th>{{ t('description', 'Description') }}</th>
+                <th class="text-right">{{ t('amount', 'Amount') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in expenses_list %}
+            <tr>
+                <td>{{ e.date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ e.description }}</td>
+                <td class="text-right" style="color: #d9534f;">-${{ "%.2f"|format(e.amount) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div style="text-align: center; margin-top: 50px; font-size: 10px; color: #999;">
+        {{ t('elite_owner', 'Elite Barber Shop Management System') }} - Exported automatically.
+    </div>
+
+</body>
+</html>

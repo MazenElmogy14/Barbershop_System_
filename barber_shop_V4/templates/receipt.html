@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt #{{ tx.id }} | Elite Barber</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .receipt-box { 
+            max-width: 480px; 
+            margin: 40px auto; 
+            padding: 30px; 
+            border: 2px dashed var(--gold-bright); 
+            background: var(--card-bg);
+        }
+        /* تحضير الفاتورة لتأخذ ألوان مخصصة واضحة جداً للماكينات الحرارية عند الطباعة الورقية */
+        @media print {
+            body { background: #ffffff !important; color: #000000 !important; }
+            .receipt-box { border: 1px solid #000; margin: 0; padding: 15px; width: 100%; box-shadow: none; background: #fff !important; }
+            .text-white, .text-gold, .text-sage, .fw-bold { color: #000000 !important; text-shadow: none !important; }
+            /* إخفاء الـ Navbar والأزرار وقت الطباعة */
+            .btn, nav, .floating-nav { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center">
+        <span class="text-gold fw-bold ms-2">🧾 INVOICE TERMINAL</span>
+        <div class="d-flex gap-2">
+            <a href="/cashier" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage" style="background: rgba(255,255,255,0.05);">🔙 Back to POS</a>
+            <button onclick="window.print()" class="btn btn-gold rounded-pill px-4">🖨️ Print</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="luxury-card receipt-box text-center">
+            <h2 class="text-gold fw-bold mb-1">💈 BARBER PRO ELITE</h2>
+            <p class="text-sage small mb-4">Premium Haircut & Styling Concept</p>
+            
+            <hr style="border-color: rgba(255,255,255,0.15);">
+            
+            <div class="text-start my-3 small">
+                <div class="d-flex justify-content-between text-white"><span class="text-sage">Invoice ID:</span> <span>#{{ tx.id }}</span></div>
+                <div class="d-flex justify-content-between text-white"><span class="text-sage">Date Time:</span> <span>{{ tx.timestamp.strftime('%Y-%m-%d %I:%M %p') }}</span></div>
+                <div class="d-flex justify-content-between text-white"><span class="text-sage">Client:</span> <span>{{ tx.name }}</span></div>
+                <div class="d-flex justify-content-between text-white"><span class="text-sage">Phone:</span> <span>{{ tx.phone }}</span></div>
+                <div class="d-flex justify-content-between text-white"><span class="text-sage">Barber Provider:</span> <span>{{ tx.barber.name if tx.barber else 'N/A' }}</span></div>
+            </div>
+
+            <hr style="border-color: rgba(255,255,255,0.15);">
+            
+            <h6 class="text-gold text-start fw-bold mb-2">PROVIDED SERVICES:</h6>
+            <div class="text-start text-white bg-dark p-2 rounded border border-secondary mb-4" style="font-size: 0.95rem;">
+                ✨ {{ tx.services }}
+            </div>
+
+            <div class="p-3 my-3 rounded-3" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,215,0,0.1);">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-sage">Method of Payment:</span>
+                    <span class="text-white fw-bold">⚙️ {{ tx.payment_method }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-sage">Discounts Deducted:</span>
+                    <span class="text-danger fw-bold">-${{ "%.2f"|format(tx.discount or 0.0) }}</span>
+                </div>
+                <hr style="border-color: rgba(255,255,255,0.1);">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-gold fw-bold">NET CASH AMOUNT:</span>
+                    <span class="text-gold fw-bold fs-3">${{ "%.2f"|format(tx.total_price) }}</span>
+                </div>
+            </div>
+
+            <p class="text-sage small text-center mt-4 mb-0">Thank You For Your Visit! ⭐</p>
+        </div>
+    </div>
+</body>
+</html>

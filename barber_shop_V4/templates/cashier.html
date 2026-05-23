@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ 'rtl' if current_lang == 'ar' else 'ltr' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('pos_terminal', 'POS Terminal | Elite Barber') }}</title>
+    
+    {% if current_lang == 'ar' %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
+    {% else %}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    {% endif %}
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .pos-container { max-width: 950px; margin: auto; }
+        .service-tile { min-height: 100px; display: flex; flex-direction: column; justify-content: center; }
+        .form-control-pos { 
+            background: rgba(10, 38, 22, 0.4) !important; 
+            border: 1px solid rgba(255, 215, 0, 0.3) !important; 
+            color: #fff !important; 
+        }
+        .form-control-pos:focus {
+            border-color: var(--gold-bright) !important;
+            box-shadow: 0 0 10px var(--neon-glow) !important;
+        }
+        .payment-label {
+            border: 2px solid rgba(163, 194, 177, 0.2);
+            color: var(--text-sage);
+            background: rgba(10, 38, 22, 0.4);
+            transition: 0.3s;
+            cursor: pointer;
+        }
+        .btn-check:checked + .payment-label {
+            border-color: var(--gold-bright);
+            background: rgba(255, 215, 0, 0.1);
+            color: var(--gold-bright);
+            box-shadow: 0 0 15px var(--neon-glow) inset;
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center">
+        <span class="navbar-brand text-gold fw-bold fs-4 m-0">⚡ {{ t('elite_pos', 'ELITE POS') }}</span>
+        <div class="d-flex gap-2 align-items-center">
+            
+            {% if current_lang == 'en' %}
+                <a href="/set_lang/ar" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 عربي</a>
+            {% else %}
+                <a href="/set_lang/en" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 EN</a>
+            {% endif %}
+
+            <a href="/clients_history" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage" style="background: rgba(255,255,255,0.05);">📜 {{ t('clients_history', 'Clients History') }}</a>
+            <a href="/owner" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage">🔙 {{ t('dashboard', 'Dashboard') }}</a>
+        </div>
+    </nav>
+
+    <div class="container py-4 pos-container">
+        <form method="POST" class="luxury-card">
+            
+            <div class="text-center mb-4">
+                <h3 class="text-gold fw-bold">{{ t('new_transaction', 'NEW TRANSACTION') }}</h3>
+                <p class="text-sage small">{{ t('enter_client_details', 'Enter client details, discounts and select services') }}</p>
+            </div>
+            
+            <div class="d-flex gap-3 mb-4 p-1 rounded-4" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(163, 194, 177, 0.1);">
+                <button type="button" id="btn-new" class="btn flex-grow-1 rounded-3 py-2 fw-bold text-dark" style="background-color: var(--gold-bright);" onclick="setMode('new')">✨ {{ t('new_client', 'NEW CLIENT') }}</button>
+                <button type="button" id="btn-old" class="btn flex-grow-1 rounded-3 py-2 fw-bold text-sage" style="background-color: transparent;" onclick="setMode('old')">🔍 {{ t('returning_client', 'RETURNING') }}</button>
+            </div>
+            <input type="hidden" id="client_type" name="client_type" value="new">
+            
+            <div id="name_div" class="mb-3">
+                <input type="text" name="name" id="name_input" class="form-control form-control-lg form-control-pos" placeholder="🧔 {{ t('client_name_placeholder', 'Client Name') }}">
+            </div>
+            
+            <div class="input-group mb-4">
+                <input type="text" id="phone_input" name="phone" class="form-control form-control-lg form-control-pos" placeholder="📱 {{ t('phone_number_placeholder', 'Phone Number') }}" required>
+                <button type="button" id="search_btn" class="btn btn-gold d-none px-4" onclick="searchClient()">{{ t('search_btn', 'Search') }} 🔍</button>
+            </div>
+
+            <div class="mb-4">
+                <label class="text-gold fw-bold mb-2">🎁 {{ t('discount_percentage', 'DISCOUNT PERCENTAGE (%)') }}</label>
+                <input type="number" name="discount_percent" class="form-control form-control-lg form-control-pos" placeholder="{{ t('discount_placeholder', 'Enter discount % (e.g. 10 or 15)') }}" step="1" min="0" max="100">
+            </div>
+
+            <div id="client_history" class="p-3 mb-4 rounded-4 d-none" style="background: rgba(255,215,0,0.05); border: 1px dashed var(--gold-bright);">
+                <div id="history_content"></div>
+            </div>
+
+            <hr style="border-color: rgba(163, 194, 177, 0.2); margin: 30px 0;">
+
+            <h5 class="text-gold mb-3 fw-bold">💈 {{ t('select_barber_title', 'SELECT BARBER') }}</h5>
+            <div class="mb-4">
+                <select name="barber_id" class="form-select form-select-lg form-control-pos" required>
+                    <option value="" class="text-muted">{{ t('choose_barber', 'Choose a Barber...') }}</option>
+                    {% for b in barbers %}
+                    <option value="{{ b.id }}" style="background-color: #0a2616; color: white;">{{ b.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <h5 class="text-gold mb-3 fw-bold">✂️ {{ t('select_services_title', 'SELECT SERVICES') }}</h5>
+            <div class="row g-3 mb-5">
+                {% for s in services %}
+                <div class="col-6 col-md-4">
+                    <label class="w-100 position-relative" for="srv_{{ s.id }}">
+                        <input class="service-checkbox d-none" type="checkbox" name="services" value="{{ s.id }}" id="srv_{{ s.id }}">
+                        <div class="service-tile text-center">
+                            <h5 class="text-white fw-bold mb-2">{{ s.name }}</h5>
+                            <span class="text-gold fw-bold fs-5">${{ s.price }}</span>
+                        </div>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+
+            <h5 class="text-gold mb-3 fw-bold">💳 {{ t('payment_method_title', 'PAYMENT METHOD') }}</h5>
+            <div class="d-flex gap-3 mb-5">
+                <input type="radio" class="btn-check" name="payment_method" id="pay_cash" value="Cash" checked>
+                <label class="btn payment-label flex-grow-1 py-3 fw-bold rounded-4 fs-5" for="pay_cash">💵 {{ t('pay_cash', 'CASH') }}</label>
+
+                <input type="radio" class="btn-check" name="payment_method" id="pay_visa" value="Visa">
+                <label class="btn payment-label flex-grow-1 py-3 fw-bold rounded-4 fs-5" for="pay_visa">💳 {{ t('pay_visa', 'VISA / CARD') }}</label>
+            </div>
+            
+            <button type="submit" class="btn btn-gold w-100 fs-4 py-3 shadow-lg">{{ t('charge_and_print', 'CHARGE & PRINT RECEIPT') }} 🧾</button>
+        </form>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+/* =========================================
+   1. الخطوط والألوان الأساسية (Root)
+========================================= */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
+:root {
+    --bg-deep: #030e08; /* أخضر ليلي عميق جداً للخلفية */
+    --card-bg: rgba(10, 38, 22, 0.65); /* أخضر زجاجي للكروت */
+    --gold-bright: #FFD700; /* ذهبي ساطع */
+    --gold-dark: #b8962d; /* ذهبي داكن للتدرجات */
+    --text-pure: #FFFFFF; /* أبيض نقي */
+    --text-sage: #A3C2B1; /* أخضر فاتح للنصوص الفرعية */
+    --neon-glow: rgba(255, 215, 0, 0.3); /* توهج ذهبي */
+    --border-color: rgba(255, 215, 0, 0.15);
+}
+
+body {
+    background-color: var(--bg-deep);
+    background-image: 
+        radial-gradient(circle at 15% 50%, rgba(10, 50, 25, 0.4), transparent 50%),
+        radial-gradient(circle at 85% 30%, rgba(20, 60, 30, 0.4), transparent 50%);
+    color: var(--text-pure);
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+}
+
+/* =========================================
+   2. الكروت الفاخرة وتأثير الزجاج (Glassmorphism)
+========================================= */
+.luxury-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.luxury-card:hover {
+    transform: translateY(-8px);
+    border-color: var(--gold-bright);
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.7), 0 0 20px var(--neon-glow);
+}
+
+/* =========================================
+   3. النصوص والأرقام البارزة
+========================================= */
+.text-gold { color: var(--gold-bright) !important; text-shadow: 0 0 10px rgba(255, 215, 0, 0.2); }
+.text-sage { color: var(--text-sage) !important; }
+.hero-number { font-size: 3.5rem; font-weight: 800; letter-spacing: -1px; }
+.glow-text { text-shadow: 0 0 15px var(--neon-glow); }
+
+/* =========================================
+   4. الأزرار (Buttons)
+========================================= */
+.btn-gold {
+    background: linear-gradient(135deg, var(--gold-bright) 0%, var(--gold-dark) 100%) !important;
+    color: #000000 !important; /* نص أسود للتباين */
+    font-weight: 800 !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border: none !important;
+    border-radius: 12px;
+    padding: 15px 30px;
+    box-shadow: 0 8px 25px var(--neon-glow);
+    transition: 0.3s;
+}
+
+.btn-gold:hover {
+    transform: scale(1.05);
+    box-shadow: 0 12px 35px rgba(255, 215, 0, 0.5);
+}
+
+.btn-nav-outline {
+    border: 1px solid var(--border-color);
+    color: var(--text-pure);
+    background: rgba(24, 74, 49, 0.3);
+    border-radius: 8px;
+    padding: 8px 16px;
+    transition: 0.3s;
+}
+
+.btn-nav-outline:hover {
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    background: rgba(212, 175, 55, 0.1);
+}
+
+/* =========================================
+   5. الشريط العلوي (Navbar)
+========================================= */
+.floating-nav {
+    background: rgba(5, 20, 12, 0.85);
+    backdrop-filter: blur(20px);
+    border-radius: 100px;
+    margin: 20px auto;
+    padding: 10px 25px;
+    border: 1px solid rgba(255, 215, 0, 0.2);
+    width: 95%;
+}
+
+/* =========================================
+   6. الجداول (Tables)
+========================================= */
+.table { color: var(--text-pure); }
+.table thead th { 
+    border-bottom: 2px solid var(--gold-bright); 
+    color: var(--gold-bright); 
+    font-size: 0.9rem; 
+    text-transform: uppercase;
+}
+.table tbody tr { border-bottom: 1px dashed rgba(163, 194, 177, 0.2); transition: 0.2s; }
+.table tbody tr:hover { background-color: rgba(24, 74, 49, 0.4); }
+
+/* =========================================
+   7. شاشة الكاشير واختيار الخدمات (POS)
+========================================= */
+.pos-container { max-width: 950px; margin: auto; }
+
+.service-tile {
+    background: rgba(10, 38, 22, 0.4);
+    border: 2px solid rgba(163, 194, 177, 0.2);
+    border-radius: 15px;
+    padding: 15px;
+    min-height: 100px; 
+    display: flex; 
+    flex-direction: column; 
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.service-tile:hover {
+    border-color: var(--gold-bright);
+    background: rgba(255, 215, 0, 0.05);
+}
+
+.service-checkbox:checked + .service-tile {
+    border-color: var(--gold-bright);
+    background: rgba(255, 215, 0, 0.1);
+    box-shadow: 0 0 15px var(--neon-glow) inset;
+}
+
+.form-control-pos { 
+    background: rgba(10, 38, 22, 0.4) !important; 
+    border: 1px solid rgba(255, 215, 0, 0.3) !important; 
+    color: #fff !important; 
+}
+
+.form-control-pos:focus {
+    border-color: var(--gold-bright) !important;
+    box-shadow: 0 0 10px var(--neon-glow) !important;
+}
+
+/* =========================================
+   8. أزرار الدفع (Cash / Visa)
+========================================= */
+.payment-label {
+    border: 2px solid rgba(163, 194, 177, 0.2);
+    color: var(--text-sage);
+    background: rgba(10, 38, 22, 0.4);
+    transition: 0.3s;
+    cursor: pointer;
+}
+
+.btn-check:checked + .payment-label {
+    border-color: var(--gold-bright);
+    background: rgba(255, 215, 0, 0.1);
+    color: var(--gold-bright);
+    box-shadow: 0 0 15px var(--neon-glow) inset;
+}
+
+/* =========================================
+   9. البحث وشاشة سجل العملاء (History)
+========================================= */
+.search-input {
+    background: rgba(10, 38, 22, 0.4) !important;
+    border: 1px solid rgba(255, 215, 0, 0.3) !important;
+    color: #fff !important;
+}
+
+.search-input:focus {
+    border-color: var(--gold-bright) !important;
+    box-shadow: 0 0 10px var(--neon-glow) !important;
+}
+
+.tx-history-box {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 10px;
+    padding: 12px;
+    margin-top: 8px;
+}
+
+/* =========================================
+   10. إصلاحات الـ Form Floating ليتناسب مع الـ Dark Mode
+========================================= */
+.form-floating > .form-control,
+.form-floating > .form-select {
+    background-color: rgba(10, 38, 22, 0.8) !important; 
+    border: 1px solid rgba(255, 215, 0, 0.3) !important; 
+    color: #ffffff !important; 
+}
+
+.form-floating > .form-control:focus,
+.form-floating > .form-select:focus {
+    background-color: rgba(10, 38, 22, 0.9) !important;
+    border-color: var(--gold-bright) !important; 
+    box-shadow: 0 0 10px var(--neon-glow) !important;
+}
+
+.form-floating > label {
+    color: var(--text-sage) !important; 
+}
+
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label,
+.form-floating > .form-select ~ label {
+    color: var(--gold-bright) !important; 
+}
+
+.form-floating > .form-control:focus ~ label::after,
+.form-floating > .form-control:not(:placeholder-shown) ~ label::after,
+.form-floating > .form-select ~ label::after {
+    background-color: transparent !important;
+}
+
+/* =========================================
+   11. إعدادات الطباعة للفاتورة (Receipt Print)
+========================================= */
+.receipt-box { 
+    max-width: 480px; 
+    margin: 40px auto; 
+    padding: 30px; 
+    border: 2px dashed var(--gold-bright); 
+    background: var(--card-bg);
+}
+
+@media print {
+    body { 
+        background: #ffffff !important; 
+        color: #000000 !important; 
+    }
+    .receipt-box { 
+        border: 1px solid #000; 
+        margin: 0; 
+        padding: 15px; 
+        width: 100%; 
+        box-shadow: none; 
+        background: #fff !important; 
+    }
+    .text-white, .text-gold, .text-sage, .fw-bold { 
+        color: #000000 !important; 
+        text-shadow: none !important; 
+    }
+    .btn, nav, .floating-nav { 
+        display: none !important; 
+    }
+    .luxury-card { 
+        border: none; 
+        box-shadow: none; 
+        background: transparent; 
+    }
+}
