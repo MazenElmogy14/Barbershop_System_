@@ -73,6 +73,7 @@ class Transaction(db.Model):
     barber = db.relationship('Barber', backref='transactions')
     payment_method = db.Column(db.String(20), default='Cash')
     discount = db.Column(db.Float, default=0.0)
+    products_list = db.relationship('TransactionProduct', backref='transaction', lazy=True, cascade="all, delete-orphan")
 
     # ADDED: Link to the junction table
     services_list = db.relationship('TransactionService', backref='transaction', lazy=True, cascade="all, delete-orphan")
@@ -88,6 +89,28 @@ class Service(db.Model):
     price = db.Column(db.Float, nullable=False)
     # Optional but recommended: Add a soft-delete flag for the future
     is_active = db.Column(db.Boolean, default=True)
+
+
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    cost_price = db.Column(db.Float, nullable=False, default=0.0) # What the shop paid for it
+    selling_price = db.Column(db.Float, nullable=False, default=0.0) # What the client pays
+    stock = db.Column(db.Integer, nullable=False, default=0)
+    low_stock_threshold = db.Column(db.Integer, nullable=False, default=5) # Alert if stock falls below this
+    is_active = db.Column(db.Boolean, default=True)
+
+class TransactionProduct(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(db.Integer, db.ForeignKey('transaction.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True) # Nullable if product is deleted later
+    
+    # Financial snapshots for bulletproof accounting
+    product_name = db.Column(db.String(100), nullable=False)
+    price_charged = db.Column(db.Float, nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+
+
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -125,9 +148,9 @@ POINTS_CONFIG = {
 @app.route('/cashier', methods=['GET', 'POST'])
 @login_required
 def cashier():
-    selected_services = []
     services = Service.query.all()
     barbers = Barber.query.all()
+    products = Product.query.filter_by(is_active=True).all() # Fetch available products for the frontend
 
     if request.method == 'POST':
         client_type = request.form.get('client_type')
@@ -135,15 +158,13 @@ def cashier():
         name = request.form.get('name')
         barber_id = request.form.get('barber_id')
         service_ids = request.form.getlist('services')
+        product_ids = request.form.getlist('products') # Get selected product IDs
         use_points = request.form.get('use_points')
         payment_method = request.form.get('payment_method', 'Cash')
-        
-        # جلب النسبة المئوية من الواجهة (الافتراضي 0)
         discount_percent = float(request.form.get('discount_percent', 0.0) or 0.0)
 
         client = Client.query.filter_by(phone=phone).first()
 
-        # معالجة العميل
         if client_type == 'new':
             if not client:
                 client = Client(name=name, phone=phone, points=0)
@@ -154,63 +175,90 @@ def cashier():
                 flash("Client not found! Please register as New.", "danger")
                 return redirect(url_for('cashier'))
 
-        # حساب الخدمات
+        # Calculate Services
         selected_services = Service.query.filter(Service.id.in_(service_ids)).all()
-        total_price = sum(s.price for s in selected_services)
+        services_total = sum(s.price for s in selected_services)
         
-        # حساب قيمة الخصم بناءً على النسبة المئوية
-        manual_discount_amount = total_price * (discount_percent / 100.0)
+        # Calculate Products
+        selected_products = Product.query.filter(Product.id.in_(product_ids)).all()
+        products_total = 0
         
-        # حساب خصم نقاط الولاء (لو العميل اختار يستخدمها)
+        # Check if items are in stock before confirming anything
+        for p in selected_products:
+            if p.stock < 1:
+                flash(f"Error: {p.name} is completely out of stock!", "danger")
+                return redirect(url_for('cashier'))
+            products_total += p.selling_price
+
+        # Combined subtotal
+        subtotal = services_total + products_total
+        
+        manual_discount_amount = subtotal * (discount_percent / 100.0)
         points_discount = 5.0 if (use_points and client.points >= 100) else 0.0
-        
-        # إجمالي الخصم
         total_discount = points_discount + manual_discount_amount
         
-        # خصم النقاط من رصيد العميل لو استخدمها
         if points_discount > 0:
             client.points -= 100
 
-        # الإجمالي النهائي بعد الخصم
-        final_total = max(0.0, total_price - total_discount)
+        final_total = max(0.0, subtotal - total_discount)
         
-        # حساب عمولة الحلاق
         barber = Barber.query.get(barber_id)
-        barber_cut = final_total * (barber.commission_value / 100.0) if barber else 0
+        # Custom adjustments: Usually barbers don't get commission on retail products
+        services_share = max(0.0, services_total - total_discount)
+        barber_cut = services_share * (barber.commission_value / 100.0) if barber else 0
 
-        # تسجيل الفاتورة
-        new_tx = Transaction(
-            name=client.name,
-            phone=client.phone,
-            # Notice we removed the "services" string mapping here
-            total_price=final_total,
-            discount=total_discount,  
-            barber_id=barber.id if barber else None,
-            barber_cut=barber_cut,
-            client_id=client.id,
-            payment_method=payment_method
-        )
-        db.session.add(new_tx)
-        
-
-        for service in selected_services:
-            tx_service = TransactionService(
-                transaction=new_tx,        # Automatically links to new_tx ID
-                service_id=service.id,
-                service_name=service.name, # Snapshot the name right now
-                price_charged=service.price # Snapshot the price right now
+        # Use an atomic try block to keep database transactions healthy
+        try:
+            new_tx = Transaction(
+                name=client.name,
+                phone=client.phone,
+                total_price=final_total,
+                discount=total_discount,
+                barber_id=barber.id if barber else None,
+                barber_cut=barber_cut,
+                client_id=client.id,
+                payment_method=payment_method
             )
-            db.session.add(tx_service)
-        # إضافة النقاط الجديدة لرصيد العميل
-        if POINTS_CONFIG['MODE'] == 'PER_UNIT':
-            client.points += int(final_total)
-        else:
-            client.points += POINTS_CONFIG['POINTS_PER_TX']
-            
-        db.session.commit()
-        return redirect(url_for('receipt', tx_id=new_tx.id))
+            db.session.add(new_tx)
 
-    return render_template('cashier.html', services=services, barbers=barbers)
+            # Save service snapshot
+            for service in selected_services:
+                tx_service = TransactionService(
+                    transaction=new_tx,
+                    service_id=service.id,
+                    service_name=service.name,
+                    price_charged=service.price
+                )
+                db.session.add(tx_service)
+
+            # Save product snapshot & deduct inventory levels safely
+            for product in selected_products:
+                tx_product = TransactionProduct(
+                    transaction=new_tx,
+                    product_id=product.id,
+                    product_name=product.name,
+                    price_charged=product.selling_price,
+                    quantity=1
+                )
+                db.session.add(tx_product)
+                
+                # Reduce stock level
+                product.stock -= 1
+
+            if POINTS_CONFIG['MODE'] == 'PER_UNIT':
+                client.points += int(final_total)
+            else:
+                client.points += POINTS_CONFIG['POINTS_PER_TX']
+                
+            db.session.commit()
+            return redirect(url_for('receipt', tx_id=new_tx.id))
+
+        except Exception as e:
+            db.session.rollback()
+            flash("An unexpected error occurred during checkout. Inventory changes rolled back.", "danger")
+            return redirect(url_for('cashier'))
+
+    return render_template('cashier.html', services=services, barbers=barbers, products=products)
 
 
 
@@ -395,6 +443,42 @@ def export_pdf():
     return response
 
 
+
+
+@app.route('/manage_products', methods=['GET', 'POST'])
+@login_required
+def manage_products():
+    if current_user.role != 'owner': return "Access Denied"
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'add':
+            new_prod = Product(
+                name=request.form['name'],
+                cost_price=float(request.form['cost_price']),
+                selling_price=float(request.form['selling_price']),
+                stock=int(request.form['stock']),
+                low_stock_threshold=int(request.form['low_stock_threshold'])
+            )
+            db.session.add(new_prod)
+        elif action == 'restock':
+            p_id = request.form['product_id']
+            added_stock = int(request.form['quantity'])
+            product = Product.query.get(p_id)
+            if product:
+                product.stock += added_stock
+        db.session.commit()
+        return redirect(url_for('manage_products'))
+
+    all_products = Product.query.filter_by(is_active=True).all()
+    
+    # System Auto-Alerts Generator
+    # Filters out anything where current stock drops to or below the safe low threshold
+    low_stock_alerts = [p for p in all_products if p.stock <= p.low_stock_threshold]
+    
+    return render_template('manage_products.html', products=all_products, alerts=low_stock_alerts)
+
+
 @app.route('/manage_barbers', methods=['GET', 'POST'])
 @login_required
 def manage_barbers():
@@ -554,7 +638,28 @@ def inject_translations():
     # Variables passed here are available in all templates using {{ current_lang }} or {{ t('key', 'Default') }}
     return dict(t=t, current_lang=lang)
 
+@app.context_processor
+def inject_global_data():
+    lang = session.get('lang', 'en')
+    translations = {}
+    
+    if lang != 'en':
+        try:
+            with open('translations.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                translations = data.get(lang, {})
+        except FileNotFoundError:
+            pass
+            
+    def t(key, default_english):
+        return translations.get(key, default_english)
+        
+    # Count low stock products to show a notification bubble on the dashboard navbar
+    low_stock_count = 0
+    if current_user.is_authenticated and current_user.role == 'owner':
+        low_stock_count = Product.query.filter(Product.is_active == True, Product.stock <= Product.low_stock_threshold).count()
 
+    return dict(t=t, current_lang=lang, low_stock_count=low_stock_count)
 
 with app.app_context():
     db.create_all()
@@ -567,4 +672,4 @@ with app.app_context():
         db.session.commit()
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5432)
