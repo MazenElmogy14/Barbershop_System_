@@ -37,8 +37,18 @@
             <button class="btn btn-outline-warning rounded-pill px-3 border-0 fw-bold me-2" data-bs-toggle="modal" data-bs-target="#statsFilterModal">⚙️ {{ t('settings', 'Settings') }}</button>
             <a href="/manage_barbers" class="btn btn-outline-light rounded-pill px-3 border-0">💈 {{ t('barbers', 'Barbers') }}</a>
             <a href="/manage_services" class="btn btn-outline-light rounded-pill px-3 border-0">📋 {{ t('services', 'Services') }}</a>
+            
+            <!-- Updated Inventory Button to match the theme -->
+            <a href="{{ url_for('manage_products') }}" class="btn btn-outline-light rounded-pill px-3 border-0">
+                📦 {{ t('inventory', 'Inventory') }}
+                {% if low_stock_count > 0 %}
+                    <span class="badge bg-danger ms-1 rounded-circle px-2">{{ low_stock_count }}</span>
+                {% endif %}
+            </a>
+
             <a href="/manage_users" class="btn btn-outline-light rounded-pill px-3 border-0 text-warning fw-bold">👨‍💼 {{ t('accounts', 'Accounts') }}</a>
             <a href="/manage_expenses" class="btn btn-outline-light rounded-pill px-3 border-0">💸 {{ t('expenses', 'Expenses') }}</a>
+            
             <a href="/cashier" class="btn btn-gold rounded-pill px-3 py-1 text-dark fw-bold">💻 {{ t('go_to_pos', 'Go to POS') }}</a>
             <a href="/logout" class="btn btn-danger rounded-pill px-4 ms-2 fw-bold" style="background-color: #dc3545; border:none;">{{ t('logout', 'Logout') }}</a>
         </div>
@@ -106,6 +116,9 @@
                                     <div class="fw-bold fs-5 text-white">{{ tx.name }}</div>
                                     <div class="text-sage small">{{ tx.timestamp.strftime('%Y-%m-%d %I:%M %p') }} • {{ tx.barber.name if tx.barber else 'N/A' }}</div>
                                     <span class="badge bg-dark text-sage border border-secondary mt-2">{{ tx.payment_method }}</span>
+                                    {% if tx.products_list %}
+                                        <span class="badge bg-primary mt-2">📦 {{ tx.products_list|length }} {{ t('items', 'Items') }}</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-end border-bottom border-secondary py-3">
                                     <div class="text-gold fw-bold fs-4">${{ "%.2f"|format(tx.total_price) }}</div>
@@ -122,6 +135,7 @@
         </div>
     </div>
 
+    <!-- Modals -->
     <div class="modal fade" id="netProfitModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content bg-dark border border-success" style="border-radius: 16px;">
@@ -161,13 +175,29 @@
                 <div class="modal-body p-0">
                     <table class="table table-dark table-hover m-0">
                         <thead class="sticky-top bg-dark">
-                            <tr class="text-secondary"><th class="px-3">{{ t('client', 'Client') }}</th><th>{{ t('services', 'Services') }}</th><th>{{ t('method', 'Method') }}</th><th class="text-end px-3">{{ t('amount', 'Amount') }}</th></tr>
+                            <tr class="text-secondary">
+                                <th class="px-3">{{ t('client', 'Client') }}</th>
+                                <th>{{ t('purchases', 'Purchases') }}</th>
+                                <th>{{ t('method', 'Method') }}</th>
+                                <th class="text-end px-3">{{ t('amount', 'Amount') }}</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for tx in transactions %}
                             <tr style="cursor: pointer;" onclick="window.open('/receipt/{{ tx.id }}', '_blank')">
                                 <td class="px-3 text-white fw-bold">{{ tx.name }}</td>
-                                <td class="text-sage small">{{ tx.services }}</td>
+                                <td class="text-sage small">
+                                    {% if tx.services %}
+                                        <div class="text-light">{{ tx.services }}</div>
+                                    {% endif %}
+                                    {% if tx.products_list %}
+                                        <div class="text-primary mt-1">
+                                            {% for p in tx.products_list %}
+                                                📦 {{ p.product_name }}{% if not loop.last %}, {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </td>
                                 <td><span class="badge bg-secondary">{{ tx.payment_method }}</span></td>
                                 <td class="text-end text-info fw-bold px-3">${{ "%.2f"|format(tx.total_price) }}</td>
                             </tr>
