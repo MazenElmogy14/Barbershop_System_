@@ -8,7 +8,6 @@ from flask import make_response
 from weasyprint import HTML
 import os
 
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'barber-secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV3.db'
@@ -29,7 +28,7 @@ class Barber(db.Model):
     commission_type = db.Column(db.String(20), default='percentage') # 'percentage' or 'fixed'
     commission_value = db.Column(db.Float, default=0.0) # 50 means 50% or $50
     total_paid = db.Column(db.Float, default=0.0)
-
+    balance = db.Column(db.Float, default=0.0)
 
 class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -40,31 +39,21 @@ class Expense(db.Model):
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    # ضفنا index=True هنا عشان يسرع البحث جداً
     phone = db.Column(db.String(20), unique=True, nullable=False, index=True) 
     points = db.Column(db.Integer, default=0)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
 
-
-
 class TransactionService(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     transaction_id = db.Column(db.Integer, db.ForeignKey('transaction.id'), nullable=False)
-    service_id = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=True) # Can be null if service is deleted
-    
-    # Financial Snapshots (Never changes even if admin edits the main Service)
+    service_id = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=True)
     service_name = db.Column(db.String(100), nullable=False)
     price_charged = db.Column(db.Float, nullable=False)
-
-
 
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20))
-    
-    # REMOVED the old String column: services = db.Column(db.String(200)) 
-    
     total_price = db.Column(db.Float)
     timestamp = db.Column(db.DateTime, default=datetime.now)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True)
@@ -74,11 +63,8 @@ class Transaction(db.Model):
     payment_method = db.Column(db.String(20), default='Cash')
     discount = db.Column(db.Float, default=0.0)
     products_list = db.relationship('TransactionProduct', backref='transaction', lazy=True, cascade="all, delete-orphan")
-
-    # ADDED: Link to the junction table
     services_list = db.relationship('TransactionService', backref='transaction', lazy=True, cascade="all, delete-orphan")
 
-    # ADDED: This property fakes the old string column so your HTML templates don't break!
     @property
     def services(self):
         return ", ".join([ts.service_name for ts in self.services_list])
@@ -87,30 +73,24 @@ class Service(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     price = db.Column(db.Float, nullable=False)
-    # Optional but recommended: Add a soft-delete flag for the future
     is_active = db.Column(db.Boolean, default=True)
-
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    cost_price = db.Column(db.Float, nullable=False, default=0.0) # What the shop paid for it
-    selling_price = db.Column(db.Float, nullable=False, default=0.0) # What the client pays
+    cost_price = db.Column(db.Float, nullable=False, default=0.0) 
+    selling_price = db.Column(db.Float, nullable=False, default=0.0) 
     stock = db.Column(db.Integer, nullable=False, default=0)
-    low_stock_threshold = db.Column(db.Integer, nullable=False, default=5) # Alert if stock falls below this
+    low_stock_threshold = db.Column(db.Integer, nullable=False, default=5) 
     is_active = db.Column(db.Boolean, default=True)
 
 class TransactionProduct(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     transaction_id = db.Column(db.Integer, db.ForeignKey('transaction.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True) # Nullable if product is deleted later
-    
-    # Financial snapshots for bulletproof accounting
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True) 
     product_name = db.Column(db.String(100), nullable=False)
     price_charged = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False, default=1)
-
-
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -137,20 +117,17 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-
-
 POINTS_CONFIG = {
-    'MODE': 'PER_UNIT',      # اختر 'PER_UNIT' للحساب بالجنيه/الدولار، أو 'PER_TX' لعدد ثابت للفاتورة
+    'MODE': 'PER_UNIT',
     'POINTS_PER_TX': 15
 }
-
 
 @app.route('/cashier', methods=['GET', 'POST'])
 @login_required
 def cashier():
     services = Service.query.all()
     barbers = Barber.query.all()
-    products = Product.query.filter_by(is_active=True).all() # Fetch available products for the frontend
+    products = Product.query.filter_by(is_active=True).all()
 
     if request.method == 'POST':
         client_type = request.form.get('client_type')
@@ -158,7 +135,7 @@ def cashier():
         name = request.form.get('name')
         barber_id = request.form.get('barber_id')
         service_ids = request.form.getlist('services')
-        product_ids = request.form.getlist('products') # Get selected product IDs
+        product_ids = request.form.getlist('products') 
         use_points = request.form.get('use_points')
         payment_method = request.form.get('payment_method', 'Cash')
         discount_percent = float(request.form.get('discount_percent', 0.0) or 0.0)
@@ -175,24 +152,19 @@ def cashier():
                 flash("Client not found! Please register as New.", "danger")
                 return redirect(url_for('cashier'))
 
-        # Calculate Services
         selected_services = Service.query.filter(Service.id.in_(service_ids)).all()
         services_total = sum(s.price for s in selected_services)
         
-        # Calculate Products
         selected_products = Product.query.filter(Product.id.in_(product_ids)).all()
         products_total = 0
         
-        # Check if items are in stock before confirming anything
         for p in selected_products:
             if p.stock < 1:
                 flash(f"Error: {p.name} is completely out of stock!", "danger")
                 return redirect(url_for('cashier'))
             products_total += p.selling_price
 
-        # Combined subtotal
         subtotal = services_total + products_total
-        
         manual_discount_amount = subtotal * (discount_percent / 100.0)
         points_discount = 5.0 if (use_points and client.points >= 100) else 0.0
         total_discount = points_discount + manual_discount_amount
@@ -201,13 +173,17 @@ def cashier():
             client.points -= 100
 
         final_total = max(0.0, subtotal - total_discount)
-        
         barber = Barber.query.get(barber_id)
-        # Custom adjustments: Usually barbers don't get commission on retail products
         services_share = max(0.0, services_total - total_discount)
-        barber_cut = services_share * (barber.commission_value / 100.0) if barber else 0
+        
+        # --- FIXED COMMISSION CALCULATION ---
+        barber_cut = 0.0
+        if barber:
+            if barber.commission_type == 'fixed':
+                barber_cut = barber.commission_value
+            else:
+                barber_cut = services_share * (barber.commission_value / 100.0)
 
-        # Use an atomic try block to keep database transactions healthy
         try:
             new_tx = Transaction(
                 name=client.name,
@@ -221,7 +197,6 @@ def cashier():
             )
             db.session.add(new_tx)
 
-            # Save service snapshot
             for service in selected_services:
                 tx_service = TransactionService(
                     transaction=new_tx,
@@ -231,7 +206,6 @@ def cashier():
                 )
                 db.session.add(tx_service)
 
-            # Save product snapshot & deduct inventory levels safely
             for product in selected_products:
                 tx_product = TransactionProduct(
                     transaction=new_tx,
@@ -241,8 +215,6 @@ def cashier():
                     quantity=1
                 )
                 db.session.add(tx_product)
-                
-                # Reduce stock level
                 product.stock -= 1
 
             if POINTS_CONFIG['MODE'] == 'PER_UNIT':
@@ -255,38 +227,25 @@ def cashier():
 
         except Exception as e:
             db.session.rollback()
-            flash("An unexpected error occurred during checkout. Inventory changes rolled back.", "danger")
+            flash("An unexpected error occurred during checkout.", "danger")
             return redirect(url_for('cashier'))
 
     return render_template('cashier.html', services=services, barbers=barbers, products=products)
 
-
-
 @app.route('/clients_history')
 @login_required
 def clients_history():
-    # جلب جميع العملاء من قاعدة البيانات
     clients = Client.query.order_by(Client.id.desc()).all()
     return render_template('clients_history.html', clients=clients)
-
-
 
 @app.route('/api/client/<phone>')
 @login_required
 def get_client(phone):
     client = Client.query.filter_by(phone=phone).first()
     if client:
-        # بنجيب آخر 5 عمليات للعميل
         transactions = Transaction.query.filter_by(client_id=client.id).order_by(Transaction.timestamp.desc()).limit(5).all()
         history = [{"date": t.timestamp.strftime('%Y-%m-%d'), "services": t.services, "total": t.total_price} for t in transactions]
-        
-        # التأكد من إرسال الـ points في الـ JSON
-        return jsonify({
-            "found": True, 
-            "name": client.name, 
-            "points": client.points, # <--- تأكد من هذا السطر
-            "history": history
-        })
+        return jsonify({"found": True, "name": client.name, "points": client.points, "history": history})
     return jsonify({"found": False})
 
 @app.route('/clients')
@@ -307,13 +266,11 @@ def receipt(tx_id):
 def owner():
     if current_user.role != 'owner': return "Access Denied"
 
-    # Save to session if arguments exist in the URL
     if 'range' in request.args:
         session['dashboard_range'] = request.args.get('range')
         session['dashboard_start'] = request.args.get('start_date', '')
         session['dashboard_end'] = request.args.get('end_date', '')
 
-    # Retrieve from session, fallback to 'today'
     time_range = session.get('dashboard_range', 'today')
     start_date_str = session.get('dashboard_start', '')
     end_date_str = session.get('dashboard_end', '')
@@ -339,11 +296,9 @@ def owner():
     else:
         time_range = 'today' 
 
-    # 🔥 THE FIX: Create strict Midnight to 11:59 PM bounds
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
-    # Bulletproof filtering without using func.date()
     transactions = Transaction.query.filter(
         Transaction.timestamp >= start_dt,
         Transaction.timestamp <= end_dt
@@ -380,15 +335,11 @@ def owner():
         expenses_list=expenses
     )
 
-
-
-
 @app.route('/export_pdf')
 @login_required
 def export_pdf():
     if current_user.role != 'owner': return "Access Denied"
 
-    # Use arguments if provided, otherwise fallback to session
     time_range = request.args.get('range') or session.get('dashboard_range', 'today')
     start_date_str = request.args.get('start_date') or session.get('dashboard_start', '')
     end_date_str = request.args.get('end_date') or session.get('dashboard_end', '')
@@ -412,7 +363,6 @@ def export_pdf():
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
         date_label = f"From {start_date_str} to {end_date_str}"
 
-    # 🔥 THE FIX: Create strict Midnight to 11:59 PM bounds
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
@@ -432,6 +382,26 @@ def export_pdf():
     total_expenses = sum(e.amount for e in expenses)
     net_profit = (total_revenue - total_commissions) - total_expenses
 
+    all_barbers = Barber.query.all()
+    barber_stats = []
+    for b in all_barbers:
+        b_txs = [t for t in transactions if t.barber_id == b.id]
+        b_rev = sum(t.total_price for t in b_txs)
+        b_cut = sum(t.barber_cut for t in b_txs)
+        barber_stats.append({
+            'name': b.name,
+            'clients': len(b_txs),
+            'revenue': b_rev,
+            'cut': b_cut,
+            'commission_type': b.commission_type,
+            'commission_value': b.commission_value
+        })
+        
+    inventory = Product.query.filter_by(is_active=True).all()
+    services = Service.query.filter_by(is_active=True).all()
+    system_users = User.query.all()
+    total_clients = Client.query.count()
+
     html_content = render_template(
         'pdf_report.html',
         transactions=transactions,
@@ -441,25 +411,26 @@ def export_pdf():
         total_commissions=total_commissions,
         expenses_list=expenses,
         date_label=date_label,
-        today_date=today.strftime('%Y-%m-%d')
+        today_date=today.strftime('%Y-%m-%d'),
+        barber_stats=barber_stats,
+        inventory=inventory,
+        services=services,
+        system_users=system_users,
+        total_clients=total_clients
     )
 
     pdf = HTML(string=html_content).write_pdf()
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
     safe_filename = date_label.replace(" ", "_").replace("/", "-")
-    response.headers['Content-Disposition'] = f'attachment; filename=Elite_Report_{safe_filename}.pdf'
+    response.headers['Content-Disposition'] = f'attachment; filename=Elite_Report_Comprehensive_{safe_filename}.pdf'
     
     return response
-
-
-
 
 @app.route('/manage_products', methods=['GET', 'POST'])
 @login_required
 def manage_products():
     if current_user.role != 'owner': return "Access Denied"
-    
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
@@ -481,19 +452,13 @@ def manage_products():
         return redirect(url_for('manage_products'))
 
     all_products = Product.query.filter_by(is_active=True).all()
-    
-    # System Auto-Alerts Generator
-    # Filters out anything where current stock drops to or below the safe low threshold
     low_stock_alerts = [p for p in all_products if p.stock <= p.low_stock_threshold]
-    
     return render_template('manage_products.html', products=all_products, alerts=low_stock_alerts)
-
 
 @app.route('/manage_barbers', methods=['GET', 'POST'])
 @login_required
 def manage_barbers():
     if current_user.role != 'owner': return "Access Denied"
-    
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
@@ -515,24 +480,18 @@ def manage_barbers():
     barbers = Barber.query.all()
     stats = []
     for b in barbers:
-        total_earned = sum(t.barber_cut for t in b.transactions) # His money (Barber's cut)
-        balance = total_earned - b.total_paid                    # What you still owe him
-        
-        # --- NEW CALCULATIONS ---
-        total_shop_revenue = sum(t.total_price for t in b.transactions) # Total money he brought to the shop
-        total_transactions = len(b.transactions)                        # How many clients he served
-        
+        total_earned = sum(t.barber_cut for t in b.transactions) 
+        balance = total_earned - b.total_paid                    
+        total_shop_revenue = sum(t.total_price for t in b.transactions) 
+        total_transactions = len(b.transactions)                        
         stats.append({
             'barber': b, 
             'total_earned': total_earned, 
             'balance': balance,
-            'shop_revenue': total_shop_revenue, # Added to dictionary
-            'clients_served': total_transactions # Added to dictionary
+            'shop_revenue': total_shop_revenue, 
+            'clients_served': total_transactions 
         })
-        
     return render_template('manage_barbers.html', stats=stats)
-
-
 
 @app.route('/edit_barber/<int:id>', methods=['POST'])
 @login_required
@@ -597,13 +556,10 @@ def manage_users():
     users = User.query.all()
     return render_template('manage_users.html', users=users)
 
-
-
 @app.route('/manage_expenses', methods=['GET', 'POST'])
 @login_required
 def manage_expenses():
     if current_user.role != 'owner': return "Access Denied"
-    
     if request.method == 'POST':
         new_expense = Expense(
             description=request.form['description'],
@@ -612,47 +568,19 @@ def manage_expenses():
         db.session.add(new_expense)
         db.session.commit()
         return redirect(url_for('manage_expenses'))
-        
     expenses = Expense.query.order_by(Expense.date.desc()).all()
     total_expenses = sum(e.amount for e in expenses)
     return render_template('manage_expenses.html', expenses=expenses, total=total_expenses)
 
-
-
-
 @app.route('/set_lang/<lang>')
 def set_lang(lang):
-    """Route to switch language and save to session"""
     session['lang'] = lang
-    # Redirect back to the page the user was just on
     return redirect(request.referrer or url_for('login'))
 
 @app.context_processor
 def inject_translations():
-    """This function makes the translation dictionary available to ALL HTML templates automatically"""
-    lang = session.get('lang', 'en') # Default to English
-    translations = {}
-    
-    if lang != 'en':
-        try:
-            with open('translations.json', 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                translations = data.get(lang, {})
-        except FileNotFoundError:
-            pass # If file is missing, just fallback to English
-            
-    # Create a helper function to translate keys
-    def t(key, default_english):
-        return translations.get(key, default_english)
-        
-    # Variables passed here are available in all templates using {{ current_lang }} or {{ t('key', 'Default') }}
-    return dict(t=t, current_lang=lang)
-
-@app.context_processor
-def inject_global_data():
     lang = session.get('lang', 'en')
     translations = {}
-    
     if lang != 'en':
         try:
             with open('translations.json', 'r', encoding='utf-8') as f:
@@ -660,11 +588,24 @@ def inject_global_data():
                 translations = data.get(lang, {})
         except FileNotFoundError:
             pass
-            
+    def t(key, default_english):
+        return translations.get(key, default_english)
+    return dict(t=t, current_lang=lang)
+
+@app.context_processor
+def inject_global_data():
+    lang = session.get('lang', 'en')
+    translations = {}
+    if lang != 'en':
+        try:
+            with open('translations.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                translations = data.get(lang, {})
+        except FileNotFoundError:
+            pass
     def t(key, default_english):
         return translations.get(key, default_english)
         
-    # Count low stock products to show a notification bubble on the dashboard navbar
     low_stock_count = 0
     if current_user.is_authenticated and current_user.role == 'owner':
         low_stock_count = Product.query.filter(Product.is_active == True, Product.stock <= Product.low_stock_threshold).count()
