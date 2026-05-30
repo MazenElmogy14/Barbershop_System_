@@ -307,9 +307,16 @@ def receipt(tx_id):
 def owner():
     if current_user.role != 'owner': return "Access Denied"
 
-    time_range = request.args.get('range', 'today')
-    start_date_str = request.args.get('start_date')
-    end_date_str = request.args.get('end_date')
+    # Save to session if arguments exist in the URL
+    if 'range' in request.args:
+        session['dashboard_range'] = request.args.get('range')
+        session['dashboard_start'] = request.args.get('start_date', '')
+        session['dashboard_end'] = request.args.get('end_date', '')
+
+    # Retrieve from session, fallback to 'today'
+    time_range = session.get('dashboard_range', 'today')
+    start_date_str = session.get('dashboard_start', '')
+    end_date_str = session.get('dashboard_end', '')
 
     today = date.today()
     start_date = today
@@ -367,6 +374,8 @@ def owner():
         barber_values=barber_values,
         date_label=date_label,
         current_range=time_range,
+        start_date_str=start_date_str,
+        end_date_str=end_date_str,
         total_commissions=total_commissions,
         expenses_list=expenses
     )
@@ -379,9 +388,10 @@ def owner():
 def export_pdf():
     if current_user.role != 'owner': return "Access Denied"
 
-    time_range = request.args.get('range', 'today')
-    start_date_str = request.args.get('start_date', '')
-    end_date_str = request.args.get('end_date', '')
+    # Use arguments if provided, otherwise fallback to session
+    time_range = request.args.get('range') or session.get('dashboard_range', 'today')
+    start_date_str = request.args.get('start_date') or session.get('dashboard_start', '')
+    end_date_str = request.args.get('end_date') or session.get('dashboard_end', '')
 
     today = date.today()
     start_date = today
@@ -672,4 +682,4 @@ with app.app_context():
         db.session.commit()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5432)
+    app.run(debug=True, port=5000, host= "0.0.0.0")

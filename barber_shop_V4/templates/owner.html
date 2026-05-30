@@ -30,7 +30,7 @@
                 <a href="/set_lang/en" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 EN</a>
             {% endif %}
 
-            <a href="/export_pdf?range={{ request.args.get('range', 'today') }}&start_date={{ request.args.get('start_date', '') }}&end_date={{ request.args.get('end_date', '') }}" class="btn btn-danger rounded-pill px-3 border-0 fw-bold me-2">
+            <a href="/export_pdf?range={{ current_range }}&start_date={{ start_date_str }}&end_date={{ end_date_str }}" class="btn btn-danger rounded-pill px-3 border-0 fw-bold me-2">
                 📄 Export PDF
             </a>
 
@@ -38,7 +38,6 @@
             <a href="/manage_barbers" class="btn btn-outline-light rounded-pill px-3 border-0">💈 {{ t('barbers', 'Barbers') }}</a>
             <a href="/manage_services" class="btn btn-outline-light rounded-pill px-3 border-0">📋 {{ t('services', 'Services') }}</a>
             
-            <!-- Updated Inventory Button to match the theme -->
             <a href="{{ url_for('manage_products') }}" class="btn btn-outline-light rounded-pill px-3 border-0">
                 📦 {{ t('inventory', 'Inventory') }}
                 {% if low_stock_count > 0 %}
@@ -135,7 +134,6 @@
         </div>
     </div>
 
-    <!-- Modals -->
     <div class="modal fade" id="netProfitModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content bg-dark border border-success" style="border-radius: 16px;">
@@ -293,11 +291,11 @@
                   <div id="customDateDiv" class="row g-2 {% if current_range != 'custom' %}d-none{% endif %}">
                       <div class="col-6">
                           <label class="text-sage small mb-1">{{ t('start_date', 'Start Date') }}</label>
-                          <input type="date" name="start_date" class="form-control" style="background: rgba(10, 38, 22, 0.8); color: white;">
+                          <input type="date" name="start_date" class="form-control" style="background: rgba(10, 38, 22, 0.8); color: white;" value="{{ start_date_str }}">
                       </div>
                       <div class="col-6">
                           <label class="text-sage small mb-1">{{ t('end_date', 'End Date') }}</label>
-                          <input type="date" name="end_date" class="form-control" style="background: rgba(10, 38, 22, 0.8); color: white;">
+                          <input type="date" name="end_date" class="form-control" style="background: rgba(10, 38, 22, 0.8); color: white;" value="{{ end_date_str }}">
                       </div>
                   </div>
               </div>
