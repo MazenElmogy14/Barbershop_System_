@@ -10,7 +10,7 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'barber-secret-key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV3.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV6.db'
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
