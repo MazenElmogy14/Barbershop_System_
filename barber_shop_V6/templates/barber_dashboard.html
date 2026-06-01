@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barber Dashboard | Elite Barber</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center">
+        <span class="navbar-brand text-gold fw-bold fs-4 m-0">💈 BARBER STATION: {{ current_user.barber.name if current_user.barber else 'N/A' }}</span>
+        <div class="d-flex gap-2">
+            <a href="/logout" class="btn btn-outline-danger rounded-pill px-4 border-0">🚪 Logout</a>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        
+        <div class="mb-4">
+            <h3 class="text-white fw-bold">Today's Assigned Clients</h3>
+            <p class="text-sage">Review your clients, check past cuts, and upload new finish photos.</p>
+        </div>
+
+        <div class="row g-4">
+            {% for tx in transactions %}
+            <div class="col-md-6 col-lg-4">
+                <div class="luxury-card h-100 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h4 class="text-gold fw-bold m-0">{{ tx.name }}</h4>
+                            <span class="text-sage small">{{ tx.timestamp.strftime('%I:%M %p') }}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-info rounded-pill" onclick="viewClientHistory({{ tx.client_id }})">📜 Cut History</button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <span class="badge bg-dark border border-secondary text-white px-2 py-1">{{ tx.services }}</span>
+                    </div>
+
+                    <hr style="border-color: rgba(255,215,0,0.15);">
+
+                    <div class="mt-auto">
+                        {% if tx.photo_filename %}
+                            <p class="text-success small fw-bold mb-2">✅ Cut Photo Saved</p>
+                            <img src="{{ url_for('static', filename='uploads/' + tx.photo_filename) }}" class="img-fluid rounded mb-2 border border-secondary" alt="Haircut Photo">
+                        {% endif %}
+                        
+                        <form action="/upload_cut_photo/{{ tx.id }}" method="POST" enctype="multipart/form-data">
+                            <label class="btn btn-outline-warning w-100 mb-2 rounded-pill fw-bold">
+                                📸 {{ 'Update Photo' if tx.photo_filename else 'Take / Upload Photo' }}
+                                <input type="file" name="photo" class="d-none" accept="image/*" capture="environment" onchange="this.form.submit()">
+                            </label>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="col-12 text-center py-5">
+                <div class="luxury-card d-inline-block px-5 py-4">
+                    <h4 class="text-secondary">No clients assigned to you yet today.</h4>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content bg-dark border border-info" style="border-radius: 16px;">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-info fw-bold" id="historyClientName">Client History</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="historyContent">
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function viewClientHistory(clientId) {
+            const contentDiv = document.getElementById('historyContent');
+            contentDiv.innerHTML = '<div class="text-center text-gold my-4">Loading...</div>';
+            
+            new bootstrap.Modal(document.getElementById('historyModal')).show();
+
+            fetch('/api/client_history_photos/' + clientId)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('historyClientName').innerText = data.name + " - Past Cuts";
+                    if (data.history.length === 0) {
+                        contentDiv.innerHTML = '<p class="text-secondary text-center">No past photos found for this client.</p>';
+                        return;
+                    }
+                    
+                    let html = '';
+                    data.history.forEach(cut => {
+                        html += `
+                            <div class="mb-4 pb-3 border-bottom border-secondary">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <strong class="text-white">${cut.date}</strong>
+                                    <span class="text-sage">${cut.services}</span>
+                                </div>
+                                <img src="${cut.photo_url}" class="img-fluid rounded border border-secondary" alt="Past Haircut">
+                            </div>
+                        `;
+                    });
+                    contentDiv.innerHTML = html;
+                });
+        }
+    </script>
+</body>
+</html>

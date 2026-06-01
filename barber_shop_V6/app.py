@@ -7,10 +7,16 @@ import json
 from flask import make_response
 from weasyprint import HTML
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'barber-secret-key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV6.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV7.db'
+
+# Configure upload folder for haircut photos
+app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
@@ -21,12 +27,14 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(50), nullable=False)
     role = db.Column(db.String(20), nullable=False)
+    linked_barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
+    barber = db.relationship('Barber', backref='user_account')
 
 class Barber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    commission_type = db.Column(db.String(20), default='percentage') # 'percentage' or 'fixed'
-    commission_value = db.Column(db.Float, default=0.0) # 50 means 50% or $50
+    commission_type = db.Column(db.String(20), default='percentage')
+    commission_value = db.Column(db.Float, default=0.0)
     total_paid = db.Column(db.Float, default=0.0)
     balance = db.Column(db.Float, default=0.0)
 
@@ -62,6 +70,7 @@ class Transaction(db.Model):
     barber = db.relationship('Barber', backref='transactions')
     payment_method = db.Column(db.String(20), default='Cash')
     discount = db.Column(db.Float, default=0.0)
+    photo_filename = db.Column(db.String(255), nullable=True)
     products_list = db.relationship('TransactionProduct', backref='transaction', lazy=True, cascade="all, delete-orphan")
     services_list = db.relationship('TransactionService', backref='transaction', lazy=True, cascade="all, delete-orphan")
 
@@ -107,7 +116,12 @@ def login():
         user = User.query.filter_by(username=request.form['username'], password=request.form['password']).first()
         if user:
             login_user(user)
-            return redirect(url_for('owner' if user.role == 'owner' else 'cashier'))
+            if user.role == 'owner':
+                return redirect(url_for('owner'))
+            elif user.role == 'barber':
+                return redirect(url_for('barber_dashboard'))
+            else:
+                return redirect(url_for('cashier'))
         flash('Invalid credentials')
     return render_template('login.html')
 
@@ -176,7 +190,6 @@ def cashier():
         barber = Barber.query.get(barber_id)
         services_share = max(0.0, services_total - total_discount)
         
-        # --- FIXED COMMISSION CALCULATION ---
         barber_cut = 0.0
         if barber:
             if barber.commission_type == 'fixed':
@@ -248,6 +261,24 @@ def get_client(phone):
         return jsonify({"found": True, "name": client.name, "points": client.points, "history": history})
     return jsonify({"found": False})
 
+@app.route('/api/client_history_photos/<int:client_id>')
+@login_required
+def get_client_history_photos(client_id):
+    client = Client.query.get_or_404(client_id)
+    transactions = Transaction.query.filter(
+        Transaction.client_id == client.id, 
+        Transaction.photo_filename != None
+    ).order_by(Transaction.timestamp.desc()).all()
+    
+    history = []
+    for t in transactions:
+        history.append({
+            "date": t.timestamp.strftime('%Y-%m-%d'), 
+            "services": t.services, 
+            "photo_url": url_for('static', filename='uploads/' + t.photo_filename)
+        })
+    return jsonify({"name": client.name, "history": history})
+
 @app.route('/clients')
 @login_required
 def clients():
@@ -260,6 +291,48 @@ def clients():
 def receipt(tx_id):
     tx = Transaction.query.get_or_404(tx_id)
     return render_template('receipt.html', tx=tx)
+
+@app.route('/barber_dashboard')
+@login_required
+def barber_dashboard():
+    if current_user.role != 'barber': return "Access Denied"
+    
+    today = date.today()
+    start_dt = datetime.combine(today, time.min)
+    end_dt = datetime.combine(today, time.max)
+    
+    # Fetch transactions designated for this barber today that DO NOT have a photo yet
+    transactions = Transaction.query.filter(
+        Transaction.barber_id == current_user.linked_barber_id,
+        Transaction.timestamp >= start_dt,
+        Transaction.timestamp <= end_dt,
+        Transaction.photo_filename.is_(None)
+    ).order_by(Transaction.timestamp.desc()).all()
+    
+    return render_template('barber_dashboard.html', transactions=transactions)
+
+@app.route('/upload_cut_photo/<int:tx_id>', methods=['POST'])
+@login_required
+def upload_cut_photo(tx_id):
+    if current_user.role not in ['barber', 'owner']: return "Access Denied"
+    tx = Transaction.query.get_or_404(tx_id)
+    
+    if 'photo' not in request.files:
+        flash('No file part')
+        return redirect(request.referrer)
+        
+    file = request.files['photo']
+    if file.filename == '':
+        flash('No selected file')
+        return redirect(request.referrer)
+        
+    if file:
+        filename = secure_filename(f"cut_tx{tx.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        tx.photo_filename = filename
+        db.session.commit()
+    
+    return redirect(request.referrer)
 
 @app.route('/owner')
 @login_required
@@ -549,12 +622,24 @@ def delete_service(id):
 def manage_users():
     if current_user.role != 'owner': return "Access Denied"
     if request.method == 'POST':
-        new_user = User(username=request.form['username'], password=request.form['password'], role=request.form['role'])
+        role = request.form['role']
+        linked_barber_id = request.form.get('linked_barber_id')
+        if not linked_barber_id or role != 'barber': 
+            linked_barber_id = None
+
+        new_user = User(
+            username=request.form['username'], 
+            password=request.form['password'], 
+            role=role,
+            linked_barber_id=linked_barber_id
+        )
         db.session.add(new_user)
         db.session.commit()
         return redirect(url_for('manage_users'))
+    
     users = User.query.all()
-    return render_template('manage_users.html', users=users)
+    barbers = Barber.query.all()
+    return render_template('manage_users.html', users=users, barbers=barbers)
 
 @app.route('/manage_expenses', methods=['GET', 'POST'])
 @login_required
