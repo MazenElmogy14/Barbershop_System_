@@ -43,7 +43,7 @@
 
     <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center">
         <span class="navbar-brand text-gold fw-bold fs-4 m-0">⚡ {{ t('elite_pos', 'ELITE POS') }}</span>
-        <div class="d-flex gap-2 align-items-center">
+        <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
             
             {% if current_lang == 'en' %}
                 <a href="/set_lang/ar" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 عربي</a>
@@ -51,8 +51,12 @@
                 <a href="/set_lang/en" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 EN</a>
             {% endif %}
 
-            <a href="/clients_history" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage" style="background: rgba(255,255,255,0.05);">📜 {{ t('clients_history', 'Clients History') }}</a>
-            <a href="/logout" class="btn btn-outline-light rounded-pill px-4 border-0 text-sage">🚪 {{ t('logout', 'Logout') }}</a>
+            <a href="{{ url_for('manage_requests') }}" class="btn btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: rgba(255, 193, 7, 0.9); color: #000;">
+                🔔 {{ t('manage_bookings', 'Online Bookings') }}
+            </a>
+
+            <a href="/clients_history" class="btn btn-outline-light rounded-pill px-3 border-0 text-sage" style="background: rgba(255,255,255,0.05);">📜 {{ t('clients_history', 'Clients History') }}</a>
+            <a href="/logout" class="btn btn-outline-light rounded-pill px-3 border-0 text-sage">🚪 {{ t('logout', 'Logout') }}</a>
         </div>
     </nav>
 

@@ -101,6 +101,22 @@ class TransactionProduct(db.Model):
     price_charged = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False, default=1)
 
+# NEW MODEL FOR CLIENT BOOKINGS
+class ClientRequest(db.Model):
+    __tablename__ = 'client_requests'
+    id = db.Column(db.Integer, primary_key=True)
+    client_name = db.Column(db.String(100), nullable=False)
+    client_phone = db.Column(db.String(20), nullable=False)
+    service_id = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=False)
+    preferred_date = db.Column(db.Date, nullable=False)
+    appointment_time = db.Column(db.Time, nullable=True)
+    barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
+    status = db.Column(db.String(20), default='Pending')
+
+    barber = db.relationship('Barber')
+    service = db.relationship('Service')
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -297,19 +313,33 @@ def receipt(tx_id):
 def barber_dashboard():
     if current_user.role != 'barber': return "Access Denied"
     
-    today = date.today()
-    start_dt = datetime.combine(today, time.min)
-    end_dt = datetime.combine(today, time.max)
+    # NEW: Alert the user if their account isn't linked to a barber profile
+    if not current_user.linked_barber_id:
+        flash("⚠️ Warning: Your account is not linked to a Barber profile. Please ask the Owner to link your account in the Manage Users page.", "danger")
+        return render_template('barber_dashboard.html', transactions=[], approved_requests=[])
     
-    # Fetch transactions designated for this barber today that DO NOT have a photo yet
+    today = date.today()
+    
+    # 1. Standard in-store walk-ins waiting for a photo 
+    # (Removed the date limit so it shows ALL pending cuts, in case they forgot to upload yesterday)
     transactions = Transaction.query.filter(
         Transaction.barber_id == current_user.linked_barber_id,
-        Transaction.timestamp >= start_dt,
-        Transaction.timestamp <= end_dt,
         Transaction.photo_filename.is_(None)
     ).order_by(Transaction.timestamp.desc()).all()
     
-    return render_template('barber_dashboard.html', transactions=transactions)
+    # 2. Approved Online Bookings 
+    # (Changed to >= today so they can see tomorrow's bookings too)
+    approved_requests = ClientRequest.query.filter(
+        ClientRequest.barber_id == current_user.linked_barber_id,
+        ClientRequest.status == 'Approved',
+        ClientRequest.preferred_date >= today
+    ).order_by(ClientRequest.preferred_date, ClientRequest.appointment_time).all()
+    
+    return render_template('barber_dashboard.html', 
+                           transactions=transactions, 
+                           approved_requests=approved_requests)
+
+
 
 @app.route('/upload_cut_photo/<int:tx_id>', methods=['POST'])
 @login_required
@@ -656,6 +686,110 @@ def manage_expenses():
     expenses = Expense.query.order_by(Expense.date.desc()).all()
     total_expenses = sum(e.amount for e in expenses)
     return render_template('manage_expenses.html', expenses=expenses, total=total_expenses)
+
+# NEW ROUTE FOR MANAGING BOOKINGS
+@app.route('/manage_requests', methods=['GET', 'POST'])
+@login_required
+def manage_requests():
+    # Allow owners and cashiers to manage requests
+    if current_user.role not in ['owner', 'cashier']: 
+        return "Access Denied"
+    
+    if request.method == 'POST':
+        req_id = request.form.get('request_id')
+        action = request.form.get('action')
+        
+        client_req = ClientRequest.query.get(req_id)
+        
+        if action == 'approve':
+            barber_id = request.form.get('barber_id')
+            time_str = request.form.get('appointment_time')
+            
+            client_req.barber_id = int(barber_id)
+            client_req.appointment_time = datetime.strptime(time_str, '%H:%M').time()
+            client_req.status = 'Approved'
+            flash(f'Request for {client_req.client_name} Approved!', 'success')
+            
+        elif action == 'reject':
+            client_req.status = 'Rejected'
+            flash('Request Rejected.', 'danger')
+            
+        db.session.commit()
+        return redirect(url_for('manage_requests'))
+        
+    pending_requests = ClientRequest.query.filter_by(status='Pending').all()
+    approved_requests = ClientRequest.query.filter_by(status='Approved').all()
+    barbers = Barber.query.all()
+    
+    return render_template('manage_requests.html', 
+        pending_requests=pending_requests, 
+        approved_requests=approved_requests, 
+        barbers=barbers)
+
+@app.route('/upload_request_photo/<int:req_id>', methods=['POST'])
+@login_required
+def upload_request_photo(req_id):
+    if current_user.role not in ['barber', 'owner']: return "Access Denied"
+    
+    client_req = ClientRequest.query.get_or_404(req_id)
+    
+    if 'photo' not in request.files or request.files['photo'].filename == '':
+        flash('No file selected', 'danger')
+        return redirect(request.referrer)
+        
+    file = request.files['photo']
+    if file:
+        # 1. Find or create the client so the photo goes to their history
+        client = Client.query.filter_by(phone=client_req.client_phone).first()
+        if not client:
+            client = Client(name=client_req.client_name, phone=client_req.client_phone, points=0)
+            db.session.add(client)
+            db.session.flush()
+            
+        # 2. Calculate the Barber's commission
+        service_price = client_req.service.price
+        barber = Barber.query.get(client_req.barber_id)
+        barber_cut = 0.0
+        if barber:
+            if barber.commission_type == 'fixed':
+                barber_cut = barber.commission_value
+            else:
+                barber_cut = service_price * (barber.commission_value / 100.0)
+
+        # 3. Convert the request into a real Transaction
+        new_tx = Transaction(
+            name=client.name,
+            phone=client.phone,
+            total_price=service_price,
+            barber_id=client_req.barber_id,
+            barber_cut=barber_cut,
+            client_id=client.id,
+            payment_method='Online Booking'
+        )
+        db.session.add(new_tx)
+        db.session.flush() 
+        
+        # 4. Attach the service
+        tx_service = TransactionService(
+            transaction=new_tx,
+            service_id=client_req.service_id,
+            service_name=client_req.service.name,
+            price_charged=service_price
+        )
+        db.session.add(tx_service)
+
+        # 5. Save the uploaded photo to the new transaction
+        filename = secure_filename(f"cut_tx{new_tx.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        new_tx.photo_filename = filename
+
+        # 6. DELETE the online request permanently
+        db.session.delete(client_req)
+        db.session.commit()
+        
+        flash('Photo uploaded and online booking completed!', 'success')
+        
+    return redirect(request.referrer)
 
 @app.route('/set_lang/<lang>')
 def set_lang(lang):
