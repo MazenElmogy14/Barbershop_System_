@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from sqlalchemy import text # NEEDED FOR DATABASE UPDATES
+from datetime import datetime, date
 import os
 
 app = Flask(__name__)
@@ -34,16 +35,46 @@ class ClientRequest(db.Model):
     appointment_time = db.Column(db.Time, nullable=True)
     barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
     status = db.Column(db.String(20), default='Pending')
+    
+    # NEW COLUMNS FOR DEVICE IP TRACKING
+    ip_address = db.Column(db.String(45), nullable=True)
+    created_at = db.Column(db.Date, default=date.today)
 
     barber = db.relationship('Barber')
     service = db.relationship('Service')
 
 with app.app_context():
     db.create_all()
+    
+    # Safely add new columns to your existing database without deleting data
+    try:
+        db.session.execute(text("ALTER TABLE client_requests ADD COLUMN ip_address VARCHAR(45)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback() # Column already exists
+        
+    try:
+        db.session.execute(text("ALTER TABLE client_requests ADD COLUMN created_at DATE"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback() # Column already exists
+
 
 @app.route('/', methods=['GET', 'POST'])
 def book():
     if request.method == 'POST':
+        # 1. GET THE DEVICE IP ADDRESS
+        client_ip = request.remote_addr
+        today = date.today()
+        
+        # 2. CHECK IF THIS IP ALREADY BOOKED TODAY
+        existing_booking = ClientRequest.query.filter_by(ip_address=client_ip, created_at=today).first()
+        
+        if existing_booking:
+            flash('⚠️ You have already submitted a booking request today from this device. Please wait until tomorrow or contact the shop directly.', 'danger')
+            return redirect(url_for('book'))
+
+        # If they haven't booked today, proceed as normal
         name = request.form.get('name')
         phone = request.form.get('phone')
         service_id = request.form.get('service_id')
@@ -56,7 +87,9 @@ def book():
                 client_name=name,
                 client_phone=phone,
                 service_id=int(service_id),
-                preferred_date=pref_date
+                preferred_date=pref_date,
+                ip_address=client_ip,  # SAVE THE IP
+                created_at=today       # SAVE THE DATE
             )
             db.session.add(new_req)
             db.session.commit()

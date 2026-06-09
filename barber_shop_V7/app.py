@@ -102,6 +102,7 @@ class TransactionProduct(db.Model):
     quantity = db.Column(db.Integer, nullable=False, default=1)
 
 # NEW MODEL FOR CLIENT BOOKINGS
+# NEW MODEL FOR CLIENT BOOKINGS
 class ClientRequest(db.Model):
     __tablename__ = 'client_requests'
     id = db.Column(db.Integer, primary_key=True)
@@ -112,10 +113,13 @@ class ClientRequest(db.Model):
     appointment_time = db.Column(db.Time, nullable=True)
     barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
     status = db.Column(db.String(20), default='Pending')
+    
+    # ADD THESE TWO LINES TO APP.PY TOO:
+    ip_address = db.Column(db.String(45), nullable=True)
+    created_at = db.Column(db.Date, default=date.today)
 
     barber = db.relationship('Barber')
     service = db.relationship('Service')
-
 
 @login_manager.user_loader
 def load_user(user_id):
