@@ -161,7 +161,6 @@ def is_feature_enabled(salon_id, feature_name):
 def book(salon_slug):
     salon = Salon.query.filter_by(slug=salon_slug.lower(), is_active=True).first_or_404()
     
-    # Check if online booking is disabled for this salon
     if not is_feature_enabled(salon.id, 'online_booking'):
         return "This salon has disabled online booking.", 403
 
@@ -215,7 +214,6 @@ def login():
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username'], password=request.form['password']).first()
         if user:
-            # Check if salon is locked before letting them log in
             if user.salon_id:
                 salon = Salon.query.get(user.salon_id)
                 if not salon.is_active:
@@ -891,7 +889,6 @@ def upload_request_photo(req_id):
 # ==========================================
 # SAAS MASTER PORTAL (WITH FEATURE TOGGLES)
 # ==========================================
-# Full list of available features
 AVAILABLE_FEATURES = [
     'online_booking', 'loyalty_points', 'pdf_report', 
     'pos', 'expenses', 'inventory', 'manage_users', 'manage_barbers'
@@ -902,7 +899,6 @@ AVAILABLE_FEATURES = [
 def superadmin_portal():
     if current_user.role != 'superadmin': return "Access Denied", 403
 
-    # Auto-generate missing features for existing salons (Prevents crashes)
     all_salons = Salon.query.all()
     for s in all_salons:
         existing = [stg.feature_name for stg in SystemSetting.query.filter_by(salon_id=s.id).all()]
@@ -929,7 +925,6 @@ def superadmin_portal():
                 owner_password = request.form.get('owner_password')
                 db.session.add(User(salon_id=new_salon.id, username=owner_username, password=owner_password, role='owner'))
                 
-                # Add all default features to the new salon
                 for f in AVAILABLE_FEATURES:
                     db.session.add(SystemSetting(salon_id=new_salon.id, feature_name=f, is_enabled=True))
                 
@@ -952,10 +947,28 @@ def superadmin_portal():
                 setting.is_enabled = not setting.is_enabled
                 db.session.commit()
                 flash(f"Updated '{feature_name}' for Salon ID {salon_id}", "success")
+                
+        # --- NEW ACTION: EDIT OWNER ---
+        elif action == 'edit_owner':
+            salon_id = request.form.get('salon_id')
+            new_username = request.form.get('new_username')
+            new_password = request.form.get('new_password')
+            
+            owner_user = User.query.filter_by(salon_id=salon_id, role='owner').first()
+            if owner_user:
+                existing_user = User.query.filter_by(username=new_username).first()
+                if existing_user and existing_user.id != owner_user.id:
+                    flash("Error: That username is already taken by another account.", "danger")
+                else:
+                    owner_user.username = new_username
+                    # Only change password if the field is not empty
+                    if new_password and new_password.strip() != '':
+                        owner_user.password = new_password
+                    db.session.commit()
+                    flash(f"Owner credentials updated successfully for Salon ID {salon_id}!", "success")
 
         return redirect(url_for('superadmin_portal'))
 
-    # Load data for display
     salons_data = []
     for s in Salon.query.all():
         owner = User.query.filter_by(salon_id=s.id, role='owner').first()
