@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from datetime import datetime, date, timedelta, time
@@ -8,12 +8,12 @@ from flask import make_response
 from weasyprint import HTML
 import os
 from werkzeug.utils import secure_filename
+import uuid
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'barber-secret-key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barberV7.db'
+app.config['SECRET_KEY'] = 'talentx-saas-secret-key'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///barber_saas.db'
 
-# Configure upload folder for haircut photos
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -21,17 +21,30 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
-# --- MODELS ---
+# ==========================================
+# SAAS MULTI-TENANT MODELS
+# ==========================================
+class Salon(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    slug = db.Column(db.String(100), unique=True, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=True) 
     username = db.Column(db.String(50), unique=True, nullable=False)
     password = db.Column(db.String(50), nullable=False)
     role = db.Column(db.String(20), nullable=False)
     linked_barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
+    
+    salon = db.relationship('Salon', backref='users')
     barber = db.relationship('Barber', backref='user_account')
 
 class Barber(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     commission_type = db.Column(db.String(20), default='percentage')
     commission_value = db.Column(db.Float, default=0.0)
@@ -40,14 +53,16 @@ class Barber(db.Model):
 
 class Expense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     description = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     date = db.Column(db.Date, default=date.today)
 
 class Client(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
-    phone = db.Column(db.String(20), unique=True, nullable=False, index=True) 
+    phone = db.Column(db.String(20), nullable=False) 
     points = db.Column(db.Integer, default=0)
     transactions = db.relationship('Transaction', backref='client', lazy=True)
 
@@ -60,6 +75,7 @@ class TransactionService(db.Model):
 
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20))
     total_price = db.Column(db.Float)
@@ -80,12 +96,14 @@ class Transaction(db.Model):
 
 class Service(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     price = db.Column(db.Float, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
 
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     cost_price = db.Column(db.Float, nullable=False, default=0.0) 
     selling_price = db.Column(db.Float, nullable=False, default=0.0) 
@@ -101,11 +119,10 @@ class TransactionProduct(db.Model):
     price_charged = db.Column(db.Float, nullable=False)
     quantity = db.Column(db.Integer, nullable=False, default=1)
 
-# NEW MODEL FOR CLIENT BOOKINGS
-# NEW MODEL FOR CLIENT BOOKINGS
 class ClientRequest(db.Model):
     __tablename__ = 'client_requests'
     id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
     client_name = db.Column(db.String(100), nullable=False)
     client_phone = db.Column(db.String(20), nullable=False)
     service_id = db.Column(db.Integer, db.ForeignKey('service.id'), nullable=False)
@@ -114,18 +131,81 @@ class ClientRequest(db.Model):
     barber_id = db.Column(db.Integer, db.ForeignKey('barber.id'), nullable=True)
     status = db.Column(db.String(20), default='Pending')
     
-    # ADD THESE TWO LINES TO APP.PY TOO:
     ip_address = db.Column(db.String(45), nullable=True)
     created_at = db.Column(db.Date, default=date.today)
 
     barber = db.relationship('Barber')
     service = db.relationship('Service')
 
+class SystemSetting(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
+    feature_name = db.Column(db.String(50), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=True)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- ROUTES ---
+# --- HELPER TO CHECK IF FEATURE IS ENABLED ---
+def is_feature_enabled(salon_id, feature_name):
+    setting = SystemSetting.query.filter_by(salon_id=salon_id, feature_name=feature_name).first()
+    return setting.is_enabled if setting else True
+
+
+# ==========================================
+# PUBLIC SAAS ROUTES (BOOKING PORTAL)
+# ==========================================
+@app.route('/book/<salon_slug>', methods=['GET', 'POST'])
+def book(salon_slug):
+    salon = Salon.query.filter_by(slug=salon_slug.lower(), is_active=True).first_or_404()
+    
+    # Check if online booking is disabled for this salon
+    if not is_feature_enabled(salon.id, 'online_booking'):
+        return "This salon has disabled online booking.", 403
+
+    if request.method == 'POST':
+        client_ip = request.remote_addr
+        today = date.today()
+        
+        existing_booking = ClientRequest.query.filter_by(salon_id=salon.id, ip_address=client_ip, created_at=today).first()
+        if existing_booking:
+            flash('⚠️ You have already submitted a booking request today from this device. Please wait until tomorrow.', 'danger')
+            return redirect(url_for('book', salon_slug=salon.slug))
+
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        service_id = request.form.get('service_id')
+        date_str = request.form.get('preferred_date')
+
+        try:
+            pref_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            new_req = ClientRequest(
+                salon_id=salon.id,
+                client_name=name,
+                client_phone=phone,
+                service_id=int(service_id),
+                preferred_date=pref_date,
+                ip_address=client_ip,
+                created_at=today
+            )
+            db.session.add(new_req)
+            db.session.commit()
+            flash('Your booking request has been sent! Our staff will contact you shortly to confirm.', 'success')
+            return redirect(url_for('book', salon_slug=salon.slug))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred. Please try again.', 'danger')
+
+    services = Service.query.filter_by(salon_id=salon.id, is_active=True).all()
+    return render_template('book.html', salon=salon, services=services)
+
+
+# ==========================================
+# INTERNAL SYSTEM ROUTES
+# ==========================================
 @app.route('/')
 def index():
     return redirect(url_for('login'))
@@ -135,8 +215,17 @@ def login():
     if request.method == 'POST':
         user = User.query.filter_by(username=request.form['username'], password=request.form['password']).first()
         if user:
+            # Check if salon is locked before letting them log in
+            if user.salon_id:
+                salon = Salon.query.get(user.salon_id)
+                if not salon.is_active:
+                    flash('Your salon account is currently suspended. Contact support.')
+                    return render_template('login.html')
+
             login_user(user)
-            if user.role == 'owner':
+            if user.role == 'superadmin':
+                return redirect(url_for('superadmin_portal'))
+            elif user.role == 'owner':
                 return redirect(url_for('owner'))
             elif user.role == 'barber':
                 return redirect(url_for('barber_dashboard'))
@@ -151,17 +240,15 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-POINTS_CONFIG = {
-    'MODE': 'PER_UNIT',
-    'POINTS_PER_TX': 15
-}
-
 @app.route('/cashier', methods=['GET', 'POST'])
 @login_required
 def cashier():
-    services = Service.query.all()
-    barbers = Barber.query.all()
-    products = Product.query.filter_by(is_active=True).all()
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'pos'): return "Access Denied: POS module is disabled.", 403
+
+    services = Service.query.filter_by(salon_id=sid, is_active=True).all()
+    barbers = Barber.query.filter_by(salon_id=sid).all()
+    products = Product.query.filter_by(salon_id=sid, is_active=True).all()
 
     if request.method == 'POST':
         client_type = request.form.get('client_type')
@@ -174,11 +261,11 @@ def cashier():
         payment_method = request.form.get('payment_method', 'Cash')
         discount_percent = float(request.form.get('discount_percent', 0.0) or 0.0)
 
-        client = Client.query.filter_by(phone=phone).first()
+        client = Client.query.filter_by(salon_id=sid, phone=phone).first()
 
         if client_type == 'new':
             if not client:
-                client = Client(name=name, phone=phone, points=0)
+                client = Client(salon_id=sid, name=name, phone=phone, points=0)
                 db.session.add(client)
                 db.session.commit()
         else:
@@ -186,10 +273,10 @@ def cashier():
                 flash("Client not found! Please register as New.", "danger")
                 return redirect(url_for('cashier'))
 
-        selected_services = Service.query.filter(Service.id.in_(service_ids)).all()
+        selected_services = Service.query.filter(Service.id.in_(service_ids), Service.salon_id==sid).all()
         services_total = sum(s.price for s in selected_services)
         
-        selected_products = Product.query.filter(Product.id.in_(product_ids)).all()
+        selected_products = Product.query.filter(Product.id.in_(product_ids), Product.salon_id==sid).all()
         products_total = 0
         
         for p in selected_products:
@@ -207,7 +294,7 @@ def cashier():
             client.points -= 100
 
         final_total = max(0.0, subtotal - total_discount)
-        barber = Barber.query.get(barber_id)
+        barber = Barber.query.filter_by(id=barber_id, salon_id=sid).first()
         services_share = max(0.0, services_total - total_discount)
         
         barber_cut = 0.0
@@ -219,6 +306,7 @@ def cashier():
 
         try:
             new_tx = Transaction(
+                salon_id=sid,
                 name=client.name,
                 phone=client.phone,
                 total_price=final_total,
@@ -250,10 +338,8 @@ def cashier():
                 db.session.add(tx_product)
                 product.stock -= 1
 
-            if POINTS_CONFIG['MODE'] == 'PER_UNIT':
-                client.points += int(final_total)
-            else:
-                client.points += POINTS_CONFIG['POINTS_PER_TX']
+            if is_feature_enabled(sid, 'loyalty_points'):
+                client.points += 15
                 
             db.session.commit()
             return redirect(url_for('receipt', tx_id=new_tx.id))
@@ -268,15 +354,15 @@ def cashier():
 @app.route('/clients_history')
 @login_required
 def clients_history():
-    clients = Client.query.order_by(Client.id.desc()).all()
+    clients = Client.query.filter_by(salon_id=current_user.salon_id).order_by(Client.id.desc()).all()
     return render_template('clients_history.html', clients=clients)
 
 @app.route('/api/client/<phone>')
 @login_required
 def get_client(phone):
-    client = Client.query.filter_by(phone=phone).first()
+    client = Client.query.filter_by(salon_id=current_user.salon_id, phone=phone).first()
     if client:
-        transactions = Transaction.query.filter_by(client_id=client.id).order_by(Transaction.timestamp.desc()).limit(5).all()
+        transactions = Transaction.query.filter_by(client_id=client.id, salon_id=current_user.salon_id).order_by(Transaction.timestamp.desc()).limit(5).all()
         history = [{"date": t.timestamp.strftime('%Y-%m-%d'), "services": t.services, "total": t.total_price} for t in transactions]
         return jsonify({"found": True, "name": client.name, "points": client.points, "history": history})
     return jsonify({"found": False})
@@ -284,7 +370,7 @@ def get_client(phone):
 @app.route('/api/client_history_photos/<int:client_id>')
 @login_required
 def get_client_history_photos(client_id):
-    client = Client.query.get_or_404(client_id)
+    client = Client.query.filter_by(id=client_id, salon_id=current_user.salon_id).first_or_404()
     transactions = Transaction.query.filter(
         Transaction.client_id == client.id, 
         Transaction.photo_filename != None
@@ -303,13 +389,13 @@ def get_client_history_photos(client_id):
 @login_required
 def clients():
     thirty_days_ago = datetime.now() - timedelta(days=30)
-    recent_transactions = Transaction.query.filter(Transaction.timestamp >= thirty_days_ago).order_by(Transaction.timestamp.desc()).all()
+    recent_transactions = Transaction.query.filter(Transaction.salon_id==current_user.salon_id, Transaction.timestamp >= thirty_days_ago).order_by(Transaction.timestamp.desc()).all()
     return render_template('clients.html', transactions=recent_transactions)
 
 @app.route('/receipt/<int:tx_id>')
 @login_required
 def receipt(tx_id):
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, salon_id=current_user.salon_id).first_or_404()
     return render_template('receipt.html', tx=tx)
 
 @app.route('/barber_dashboard')
@@ -317,23 +403,20 @@ def receipt(tx_id):
 def barber_dashboard():
     if current_user.role != 'barber': return "Access Denied"
     
-    # NEW: Alert the user if their account isn't linked to a barber profile
     if not current_user.linked_barber_id:
-        flash("⚠️ Warning: Your account is not linked to a Barber profile. Please ask the Owner to link your account in the Manage Users page.", "danger")
+        flash("⚠️ Warning: Your account is not linked to a Barber profile.", "danger")
         return render_template('barber_dashboard.html', transactions=[], approved_requests=[])
     
     today = date.today()
     
-    # 1. Standard in-store walk-ins waiting for a photo 
-    # (Removed the date limit so it shows ALL pending cuts, in case they forgot to upload yesterday)
     transactions = Transaction.query.filter(
+        Transaction.salon_id == current_user.salon_id,
         Transaction.barber_id == current_user.linked_barber_id,
         Transaction.photo_filename.is_(None)
     ).order_by(Transaction.timestamp.desc()).all()
     
-    # 2. Approved Online Bookings 
-    # (Changed to >= today so they can see tomorrow's bookings too)
     approved_requests = ClientRequest.query.filter(
+        ClientRequest.salon_id == current_user.salon_id,
         ClientRequest.barber_id == current_user.linked_barber_id,
         ClientRequest.status == 'Approved',
         ClientRequest.preferred_date >= today
@@ -343,13 +426,11 @@ def barber_dashboard():
                            transactions=transactions, 
                            approved_requests=approved_requests)
 
-
-
 @app.route('/upload_cut_photo/<int:tx_id>', methods=['POST'])
 @login_required
 def upload_cut_photo(tx_id):
     if current_user.role not in ['barber', 'owner']: return "Access Denied"
-    tx = Transaction.query.get_or_404(tx_id)
+    tx = Transaction.query.filter_by(id=tx_id, salon_id=current_user.salon_id).first_or_404()
     
     if 'photo' not in request.files:
         flash('No file part')
@@ -372,6 +453,7 @@ def upload_cut_photo(tx_id):
 @login_required
 def owner():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
 
     if 'range' in request.args:
         session['dashboard_range'] = request.args.get('range')
@@ -407,6 +489,7 @@ def owner():
     end_dt = datetime.combine(end_date, time.max)
 
     transactions = Transaction.query.filter(
+        Transaction.salon_id == sid,
         Transaction.timestamp >= start_dt,
         Transaction.timestamp <= end_dt
     ).all()
@@ -415,6 +498,7 @@ def owner():
     total_commissions = sum(t.barber_cut for t in transactions)
     
     expenses = Expense.query.filter(
+        Expense.salon_id == sid,
         Expense.date >= start_dt,
         Expense.date <= end_dt
     ).all()
@@ -422,9 +506,12 @@ def owner():
     total_expenses = sum(e.amount for e in expenses)
     net_profit = (total_revenue - total_commissions) - total_expenses
 
-    barbers = Barber.query.all()
+    barbers = Barber.query.filter_by(salon_id=sid).all()
     barber_names = [b.name for b in barbers]
     barber_values = [sum(t.total_price for t in transactions if t.barber_id == b.id) for b in barbers]
+
+    salon_obj = Salon.query.get(sid)
+    booking_url = url_for('book', salon_slug=salon_obj.slug, _external=True)
 
     return render_template(
         'owner.html',
@@ -439,13 +526,16 @@ def owner():
         start_date_str=start_date_str,
         end_date_str=end_date_str,
         total_commissions=total_commissions,
-        expenses_list=expenses
+        expenses_list=expenses,
+        booking_url=booking_url
     )
 
 @app.route('/export_pdf')
 @login_required
 def export_pdf():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'pdf_report'): return "Access Denied: PDF Export is disabled.", 403
 
     time_range = request.args.get('range') or session.get('dashboard_range', 'today')
     start_date_str = request.args.get('start_date') or session.get('dashboard_start', '')
@@ -458,22 +548,19 @@ def export_pdf():
 
     if time_range == '7days':
         start_date = today - timedelta(days=7)
-        date_label = "Last 7 Days"
     elif time_range == 'monthly':
         start_date = today.replace(day=1)
-        date_label = "This Month's"
     elif time_range == 'yearly':
         start_date = today.replace(month=1, day=1)
-        date_label = "This Year's"
     elif time_range == 'custom' and start_date_str and end_date_str:
         start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
         end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-        date_label = f"From {start_date_str} to {end_date_str}"
 
     start_dt = datetime.combine(start_date, time.min)
     end_dt = datetime.combine(end_date, time.max)
 
     transactions = Transaction.query.filter(
+        Transaction.salon_id == sid,
         Transaction.timestamp >= start_dt,
         Transaction.timestamp <= end_dt
     ).all()
@@ -482,6 +569,7 @@ def export_pdf():
     total_commissions = sum(t.barber_cut for t in transactions)
     
     expenses = Expense.query.filter(
+        Expense.salon_id == sid,
         Expense.date >= start_dt,
         Expense.date <= end_dt
     ).all()
@@ -489,25 +577,23 @@ def export_pdf():
     total_expenses = sum(e.amount for e in expenses)
     net_profit = (total_revenue - total_commissions) - total_expenses
 
-    all_barbers = Barber.query.all()
+    all_barbers = Barber.query.filter_by(salon_id=sid).all()
     barber_stats = []
     for b in all_barbers:
         b_txs = [t for t in transactions if t.barber_id == b.id]
-        b_rev = sum(t.total_price for t in b_txs)
-        b_cut = sum(t.barber_cut for t in b_txs)
         barber_stats.append({
             'name': b.name,
             'clients': len(b_txs),
-            'revenue': b_rev,
-            'cut': b_cut,
+            'revenue': sum(t.total_price for t in b_txs),
+            'cut': sum(t.barber_cut for t in b_txs),
             'commission_type': b.commission_type,
             'commission_value': b.commission_value
         })
         
-    inventory = Product.query.filter_by(is_active=True).all()
-    services = Service.query.filter_by(is_active=True).all()
-    system_users = User.query.all()
-    total_clients = Client.query.count()
+    inventory = Product.query.filter_by(salon_id=sid, is_active=True).all()
+    services = Service.query.filter_by(salon_id=sid, is_active=True).all()
+    system_users = User.query.filter_by(salon_id=sid).all()
+    total_clients = Client.query.filter_by(salon_id=sid).count()
 
     html_content = render_template(
         'pdf_report.html',
@@ -530,18 +616,21 @@ def export_pdf():
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
     safe_filename = date_label.replace(" ", "_").replace("/", "-")
-    response.headers['Content-Disposition'] = f'attachment; filename=Elite_Report_Comprehensive_{safe_filename}.pdf'
-    
+    response.headers['Content-Disposition'] = f'attachment; filename=Elite_Report_{safe_filename}.pdf'
     return response
 
 @app.route('/manage_products', methods=['GET', 'POST'])
 @login_required
 def manage_products():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'inventory'): return "Access Denied: Inventory module is disabled.", 403
+
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
             new_prod = Product(
+                salon_id=sid,
                 name=request.form['name'],
                 cost_price=float(request.form['cost_price']),
                 selling_price=float(request.form['selling_price']),
@@ -551,14 +640,13 @@ def manage_products():
             db.session.add(new_prod)
         elif action == 'restock':
             p_id = request.form['product_id']
-            added_stock = int(request.form['quantity'])
-            product = Product.query.get(p_id)
+            product = Product.query.filter_by(id=p_id, salon_id=sid).first()
             if product:
-                product.stock += added_stock
+                product.stock += int(request.form['quantity'])
         db.session.commit()
         return redirect(url_for('manage_products'))
 
-    all_products = Product.query.filter_by(is_active=True).all()
+    all_products = Product.query.filter_by(salon_id=sid, is_active=True).all()
     low_stock_alerts = [p for p in all_products if p.stock <= p.low_stock_threshold]
     return render_template('manage_products.html', products=all_products, alerts=low_stock_alerts)
 
@@ -566,10 +654,14 @@ def manage_products():
 @login_required
 def manage_barbers():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'manage_barbers'): return "Access Denied: Barber management is disabled.", 403
+
     if request.method == 'POST':
         action = request.form.get('action')
         if action == 'add':
             new_b = Barber(
+                salon_id=sid,
                 name=request.form['name'],
                 commission_type=request.form['commission_type'],
                 commission_value=float(request.form['commission_value'])
@@ -577,26 +669,24 @@ def manage_barbers():
             db.session.add(new_b)
         elif action == 'pay':
             b_id = request.form['barber_id']
-            amount = float(request.form['amount'])
-            barber = Barber.query.get(b_id)
+            barber = Barber.query.filter_by(id=b_id, salon_id=sid).first()
             if barber:
-                barber.total_paid += amount
+                barber.total_paid += float(request.form['amount'])
         db.session.commit()
         return redirect(url_for('manage_barbers'))
 
-    barbers = Barber.query.all()
+    barbers = Barber.query.filter_by(salon_id=sid).all()
     stats = []
     for b in barbers:
         total_earned = sum(t.barber_cut for t in b.transactions) 
         balance = total_earned - b.total_paid                    
         total_shop_revenue = sum(t.total_price for t in b.transactions) 
-        total_transactions = len(b.transactions)                        
         stats.append({
             'barber': b, 
             'total_earned': total_earned, 
             'balance': balance,
             'shop_revenue': total_shop_revenue, 
-            'clients_served': total_transactions 
+            'clients_served': len(b.transactions) 
         })
     return render_template('manage_barbers.html', stats=stats)
 
@@ -604,7 +694,7 @@ def manage_barbers():
 @login_required
 def edit_barber(id):
     if current_user.role != 'owner': return "Access Denied"
-    barber = Barber.query.get_or_404(id)
+    barber = Barber.query.filter_by(id=id, salon_id=current_user.salon_id).first_or_404()
     barber.name = request.form['name']
     barber.commission_type = request.form['commission_type']
     barber.commission_value = float(request.form['commission_value'])
@@ -615,7 +705,7 @@ def edit_barber(id):
 @login_required
 def delete_barber(id):
     if current_user.role != 'owner': return "Access Denied"
-    barber = Barber.query.get_or_404(id)
+    barber = Barber.query.filter_by(id=id, salon_id=current_user.salon_id).first_or_404()
     db.session.delete(barber)
     db.session.commit()
     return redirect(url_for('manage_barbers'))
@@ -624,19 +714,20 @@ def delete_barber(id):
 @login_required
 def manage_services():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
     if request.method == 'POST':
-        new_service = Service(name=request.form['name'], price=float(request.form['price']))
+        new_service = Service(salon_id=sid, name=request.form['name'], price=float(request.form['price']))
         db.session.add(new_service)
         db.session.commit()
         return redirect(url_for('manage_services'))
-    services = Service.query.all()
+    services = Service.query.filter_by(salon_id=sid).all()
     return render_template('manage_services.html', services=services)
 
 @app.route('/edit_service/<int:id>', methods=['POST'])
 @login_required
 def edit_service(id):
     if current_user.role != 'owner': return "Access Denied"
-    service = Service.query.get_or_404(id)
+    service = Service.query.filter_by(id=id, salon_id=current_user.salon_id).first_or_404()
     service.name = request.form['name']
     service.price = float(request.form['price'])
     db.session.commit()
@@ -646,7 +737,7 @@ def edit_service(id):
 @login_required
 def delete_service(id):
     if current_user.role != 'owner': return "Access Denied"
-    service = Service.query.get_or_404(id)
+    service = Service.query.filter_by(id=id, salon_id=current_user.salon_id).first_or_404()
     db.session.delete(service)
     db.session.commit()
     return redirect(url_for('manage_services'))
@@ -655,6 +746,9 @@ def delete_service(id):
 @login_required
 def manage_users():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'manage_users'): return "Access Denied: Account management is disabled.", 403
+
     if request.method == 'POST':
         role = request.form['role']
         linked_barber_id = request.form.get('linked_barber_id')
@@ -662,6 +756,7 @@ def manage_users():
             linked_barber_id = None
 
         new_user = User(
+            salon_id=sid,
             username=request.form['username'], 
             password=request.form['password'], 
             role=role,
@@ -671,39 +766,42 @@ def manage_users():
         db.session.commit()
         return redirect(url_for('manage_users'))
     
-    users = User.query.all()
-    barbers = Barber.query.all()
+    users = User.query.filter_by(salon_id=sid).filter(User.role != 'superadmin').all()
+    barbers = Barber.query.filter_by(salon_id=sid).all()
     return render_template('manage_users.html', users=users, barbers=barbers)
 
 @app.route('/manage_expenses', methods=['GET', 'POST'])
 @login_required
 def manage_expenses():
     if current_user.role != 'owner': return "Access Denied"
+    sid = current_user.salon_id
+    if not is_feature_enabled(sid, 'expenses'): return "Access Denied: Expense module is disabled.", 403
+
     if request.method == 'POST':
         new_expense = Expense(
+            salon_id=sid,
             description=request.form['description'],
             amount=float(request.form['amount'])
         )
         db.session.add(new_expense)
         db.session.commit()
         return redirect(url_for('manage_expenses'))
-    expenses = Expense.query.order_by(Expense.date.desc()).all()
+    expenses = Expense.query.filter_by(salon_id=sid).order_by(Expense.date.desc()).all()
     total_expenses = sum(e.amount for e in expenses)
     return render_template('manage_expenses.html', expenses=expenses, total=total_expenses)
 
-# NEW ROUTE FOR MANAGING BOOKINGS
 @app.route('/manage_requests', methods=['GET', 'POST'])
 @login_required
 def manage_requests():
-    # Allow owners and cashiers to manage requests
     if current_user.role not in ['owner', 'cashier']: 
         return "Access Denied"
     
+    sid = current_user.salon_id
     if request.method == 'POST':
         req_id = request.form.get('request_id')
         action = request.form.get('action')
         
-        client_req = ClientRequest.query.get(req_id)
+        client_req = ClientRequest.query.filter_by(id=req_id, salon_id=sid).first()
         
         if action == 'approve':
             barber_id = request.form.get('barber_id')
@@ -721,9 +819,9 @@ def manage_requests():
         db.session.commit()
         return redirect(url_for('manage_requests'))
         
-    pending_requests = ClientRequest.query.filter_by(status='Pending').all()
-    approved_requests = ClientRequest.query.filter_by(status='Approved').all()
-    barbers = Barber.query.all()
+    pending_requests = ClientRequest.query.filter_by(salon_id=sid, status='Pending').all()
+    approved_requests = ClientRequest.query.filter_by(salon_id=sid, status='Approved').all()
+    barbers = Barber.query.filter_by(salon_id=sid).all()
     
     return render_template('manage_requests.html', 
         pending_requests=pending_requests, 
@@ -735,7 +833,7 @@ def manage_requests():
 def upload_request_photo(req_id):
     if current_user.role not in ['barber', 'owner']: return "Access Denied"
     
-    client_req = ClientRequest.query.get_or_404(req_id)
+    client_req = ClientRequest.query.filter_by(id=req_id, salon_id=current_user.salon_id).first_or_404()
     
     if 'photo' not in request.files or request.files['photo'].filename == '':
         flash('No file selected', 'danger')
@@ -743,14 +841,12 @@ def upload_request_photo(req_id):
         
     file = request.files['photo']
     if file:
-        # 1. Find or create the client so the photo goes to their history
-        client = Client.query.filter_by(phone=client_req.client_phone).first()
+        client = Client.query.filter_by(salon_id=current_user.salon_id, phone=client_req.client_phone).first()
         if not client:
-            client = Client(name=client_req.client_name, phone=client_req.client_phone, points=0)
+            client = Client(salon_id=current_user.salon_id, name=client_req.client_name, phone=client_req.client_phone, points=0)
             db.session.add(client)
             db.session.flush()
             
-        # 2. Calculate the Barber's commission
         service_price = client_req.service.price
         barber = Barber.query.get(client_req.barber_id)
         barber_cut = 0.0
@@ -760,8 +856,8 @@ def upload_request_photo(req_id):
             else:
                 barber_cut = service_price * (barber.commission_value / 100.0)
 
-        # 3. Convert the request into a real Transaction
         new_tx = Transaction(
+            salon_id=current_user.salon_id,
             name=client.name,
             phone=client.phone,
             total_price=service_price,
@@ -773,7 +869,6 @@ def upload_request_photo(req_id):
         db.session.add(new_tx)
         db.session.flush() 
         
-        # 4. Attach the service
         tx_service = TransactionService(
             transaction=new_tx,
             service_id=client_req.service_id,
@@ -782,12 +877,10 @@ def upload_request_photo(req_id):
         )
         db.session.add(tx_service)
 
-        # 5. Save the uploaded photo to the new transaction
         filename = secure_filename(f"cut_tx{new_tx.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         new_tx.photo_filename = filename
 
-        # 6. DELETE the online request permanently
         db.session.delete(client_req)
         db.session.commit()
         
@@ -795,6 +888,90 @@ def upload_request_photo(req_id):
         
     return redirect(request.referrer)
 
+# ==========================================
+# SAAS MASTER PORTAL (WITH FEATURE TOGGLES)
+# ==========================================
+# Full list of available features
+AVAILABLE_FEATURES = [
+    'online_booking', 'loyalty_points', 'pdf_report', 
+    'pos', 'expenses', 'inventory', 'manage_users', 'manage_barbers'
+]
+
+@app.route('/superadmin_portal', methods=['GET', 'POST'])
+@login_required
+def superadmin_portal():
+    if current_user.role != 'superadmin': return "Access Denied", 403
+
+    # Auto-generate missing features for existing salons (Prevents crashes)
+    all_salons = Salon.query.all()
+    for s in all_salons:
+        existing = [stg.feature_name for stg in SystemSetting.query.filter_by(salon_id=s.id).all()]
+        for f in AVAILABLE_FEATURES:
+            if f not in existing:
+                db.session.add(SystemSetting(salon_id=s.id, feature_name=f, is_enabled=True))
+    db.session.commit()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'register_salon':
+            salon_name = request.form.get('salon_name')
+            salon_slug = request.form.get('salon_slug').lower().replace(" ", "-")
+            
+            if Salon.query.filter_by(slug=salon_slug).first():
+                flash("Error: Salon URL slug is already taken. Choose another.", "danger")
+            else:
+                new_salon = Salon(name=salon_name, slug=salon_slug)
+                db.session.add(new_salon)
+                db.session.flush() 
+                
+                owner_username = request.form.get('owner_username')
+                owner_password = request.form.get('owner_password')
+                db.session.add(User(salon_id=new_salon.id, username=owner_username, password=owner_password, role='owner'))
+                
+                # Add all default features to the new salon
+                for f in AVAILABLE_FEATURES:
+                    db.session.add(SystemSetting(salon_id=new_salon.id, feature_name=f, is_enabled=True))
+                
+                db.session.commit()
+                flash(f"Successfully registered Salon: {salon_name}", "success")
+                
+        elif action == 'toggle_status':
+            salon_id = request.form.get('salon_id')
+            salon = Salon.query.get(salon_id)
+            if salon:
+                salon.is_active = not salon.is_active
+                db.session.commit()
+                flash(f"Salon status updated.", "success")
+                
+        elif action == 'toggle_feature':
+            salon_id = request.form.get('salon_id')
+            feature_name = request.form.get('feature_name')
+            setting = SystemSetting.query.filter_by(salon_id=salon_id, feature_name=feature_name).first()
+            if setting:
+                setting.is_enabled = not setting.is_enabled
+                db.session.commit()
+                flash(f"Updated '{feature_name}' for Salon ID {salon_id}", "success")
+
+        return redirect(url_for('superadmin_portal'))
+
+    # Load data for display
+    salons_data = []
+    for s in Salon.query.all():
+        owner = User.query.filter_by(salon_id=s.id, role='owner').first()
+        settings = SystemSetting.query.filter_by(salon_id=s.id).all()
+        salons_data.append({
+            'salon': s,
+            'owner_username': owner.username if owner else "N/A",
+            'settings': settings
+        })
+
+    return render_template('superadmin.html', salons_data=salons_data)
+
+
+# ==========================================
+# SYSTEM GLOBALS
+# ==========================================
 @app.route('/set_lang/<lang>')
 def set_lang(lang):
     session['lang'] = lang
@@ -830,20 +1007,25 @@ def inject_global_data():
         return translations.get(key, default_english)
         
     low_stock_count = 0
-    if current_user.is_authenticated and current_user.role == 'owner':
-        low_stock_count = Product.query.filter(Product.is_active == True, Product.stock <= Product.low_stock_threshold).count()
+    features = {}
+    
+    if current_user.is_authenticated and current_user.role != 'superadmin':
+        low_stock_count = Product.query.filter(Product.salon_id==current_user.salon_id, Product.is_active == True, Product.stock <= Product.low_stock_threshold).count()
+        try:
+            settings = SystemSetting.query.filter_by(salon_id=current_user.salon_id).all()
+            for s in settings:
+                features[s.feature_name] = s.is_enabled
+        except:
+            pass
 
-    return dict(t=t, current_lang=lang, low_stock_count=low_stock_count)
+    return dict(t=t, current_lang=lang, low_stock_count=low_stock_count, features=features)
 
 with app.app_context():
     db.create_all()
-    if not User.query.filter_by(username='admin').first():
-        db.session.add(User(username='admin', password='123', role='owner'))
-        db.session.add(User(username='staff', password='123', role='cashier'))
-        db.session.commit()
-    if not Service.query.first():
-        db.session.add(Service(name="Haircut", price=50.0))
+    
+    if not User.query.filter_by(username='talentx').first():
+        db.session.add(User(username='talentx', password='123', role='superadmin'))
         db.session.commit()
 
 if __name__ == '__main__':
-    app.run(debug=False, port=5000, host= "0.0.0.0")
+    app.run(debug=True, port=5000, host="0.0.0.0")

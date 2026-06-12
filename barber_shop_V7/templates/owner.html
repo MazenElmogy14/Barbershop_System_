@@ -30,31 +30,62 @@
                 <a href="/set_lang/en" class="btn btn-outline-info rounded-pill px-3 border-0 fw-bold">🌐 EN</a>
             {% endif %}
 
+            {% if features.get('pdf_report', True) %}
             <a href="/export_pdf?range={{ current_range }}&start_date={{ start_date_str }}&end_date={{ end_date_str }}" class="btn btn-danger rounded-pill px-3 border-0 fw-bold me-2">
                 📄 Export PDF
             </a>
+            {% endif %}
 
             <button class="btn btn-outline-warning rounded-pill px-3 border-0 fw-bold me-2" data-bs-toggle="modal" data-bs-target="#statsFilterModal">⚙️ {{ t('settings', 'Settings') }}</button>
+            
+            {% if features.get('manage_barbers', True) %}
             <a href="/manage_barbers" class="btn btn-outline-light rounded-pill px-3 border-0">💈 {{ t('barbers', 'Barbers') }}</a>
+            {% endif %}
+            
             <a href="/manage_services" class="btn btn-outline-light rounded-pill px-3 border-0">📋 {{ t('services', 'Services') }}</a>
             
+            {% if features.get('inventory', True) %}
             <a href="{{ url_for('manage_products') }}" class="btn btn-outline-light rounded-pill px-3 border-0">
                 📦 {{ t('inventory', 'Inventory') }}
                 {% if low_stock_count > 0 %}
                     <span class="badge bg-danger ms-1 rounded-circle px-2">{{ low_stock_count }}</span>
                 {% endif %}
             </a>
+            {% endif %}
 
+            {% if features.get('manage_users', True) %}
             <a href="/manage_users" class="btn btn-outline-light rounded-pill px-3 border-0 text-warning fw-bold">👨‍💼 {{ t('accounts', 'Accounts') }}</a>
+            {% endif %}
+
+            {% if features.get('expenses', True) %}
             <a href="/manage_expenses" class="btn btn-outline-light rounded-pill px-3 border-0">💸 {{ t('expenses', 'Expenses') }}</a>
+            {% endif %}
             
+            {% if features.get('pos', True) %}
             <a href="/cashier" class="btn btn-gold rounded-pill px-3 py-1 text-dark fw-bold">💻 {{ t('go_to_pos', 'Go to POS') }}</a>
+            {% endif %}
+
             <a href="/logout" class="btn btn-danger rounded-pill px-4 ms-2 fw-bold" style="background-color: #dc3545; border:none;">{{ t('logout', 'Logout') }}</a>
         </div>
     </nav>
 
     <div class="container-fluid px-4 py-3">
         
+        {% if features.get('online_booking', True) and booking_url %}
+        <div class="row mb-3 animate-fade">
+            <div class="col-12">
+                <div class="alert bg-dark border border-warning d-flex align-items-center justify-content-between py-2" role="alert" style="border-radius: 12px;">
+                    <div>
+                        <span class="badge bg-warning text-dark me-2 fw-bold">LIVE</span> 
+                        <span class="text-sage small">Your Public Booking Portal Link:</span> 
+                        <a href="{{ booking_url }}" target="_blank" class="text-info fw-bold ms-2">{{ booking_url }}</a>
+                    </div>
+                    <button class="btn btn-sm btn-outline-warning fw-bold" onclick="navigator.clipboard.writeText('{{ booking_url }}'); alert('Booking URL copied to clipboard!');">📋 Copy Link</button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="row g-4 mb-5">
             <div class="col-lg-12">
                 <div class="luxury-card text-center py-5 clickable-card" style="background: linear-gradient(180deg, rgba(10, 38, 22, 0.8) 0%, rgba(3, 14, 8, 0.9) 100%);" data-bs-toggle="modal" data-bs-target="#netProfitModal">

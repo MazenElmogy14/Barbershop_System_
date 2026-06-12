@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TalentX SaaS Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    <nav class="navbar floating-nav sticky-top d-flex justify-content-between align-items-center bg-dark">
+        <span class="navbar-brand text-danger fw-bold fs-4 m-0">⚡ TALENTX SAAS COMMAND CENTER</span>
+        <div class="d-flex gap-2">
+            <a href="/logout" class="btn btn-danger rounded-pill px-4 border-0 fw-bold">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container py-5 animate-fade">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} fw-bold">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="luxury-card border-success" style="border: 1px solid;">
+                    <h4 class="text-success mb-4">🏢 Register New Tenant</h4>
+                    <p class="text-secondary small">Add a new salon and create their owner account. All modules will be enabled by default.</p>
+                    
+                    <form method="POST">
+                        <input type="hidden" name="action" value="register_salon">
+                        
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Salon Name</label>
+                            <input type="text" name="salon_name" class="form-control bg-dark text-white border-secondary" required placeholder="e.g. VIP Cuts">
+                        </div>
+                        <div class="mb-4">
+                            <label class="text-white small mb-1">Booking URL Slug</label>
+                            <input type="text" name="salon_slug" class="form-control bg-dark text-white border-secondary" required placeholder="vip-cuts">
+                            <small class="text-secondary">Client URL: yourdomain.com/book/<b>vip-cuts</b></small>
+                        </div>
+
+                        <hr class="border-secondary">
+                        <h6 class="text-info mb-3">Owner Account Details</h6>
+                        
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Owner Login Username</label>
+                            <input type="text" name="owner_username" class="form-control bg-dark text-white border-secondary" required placeholder="vip_admin">
+                        </div>
+                        <div class="mb-4">
+                            <label class="text-white small mb-1">Owner Password</label>
+                            <input type="text" name="owner_password" class="form-control bg-dark text-white border-secondary" required placeholder="password">
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100 fw-bold">Register & Deploy System</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-md-8 mb-4">
+                <div class="luxury-card border-warning" style="border: 1px solid;">
+                    <h4 class="text-warning mb-4">🌍 Active Salons & Feature Toggles</h4>
+                    <p class="text-secondary small">Manage access and specific features for all salons operating on the platform.</p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover mt-3 align-middle">
+                            <thead>
+                                <tr>
+                                    <th class="text-gold">Salon Name</th>
+                                    <th class="text-gold">URL Link</th>
+                                    <th class="text-gold">Owner</th>
+                                    <th class="text-gold">Status</th>
+                                    <th class="text-gold text-center">Modules</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in salons_data %}
+                                <tr>
+                                    <td class="fw-bold">{{ item.salon.name }}</td>
+                                    <td><a href="/book/{{ item.salon.slug }}" target="_blank" class="text-info">/{{ item.salon.slug }}</a></td>
+                                    <td>{{ item.owner_username }}</td>
+                                    <td>
+                                        <form method="POST" class="m-0 d-inline">
+                                            <input type="hidden" name="action" value="toggle_status">
+                                            <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                                            {% if item.salon.is_active %}
+                                            <button type="submit" class="btn btn-sm btn-outline-success">Active</button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspended</button>
+                                            {% endif %}
+                                        </form>
+                                    </td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#featuresModal{{ item.salon.id }}">
+                                            ⚙️ Manage
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="5" class="text-center text-secondary">No salons registered yet.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% for item in salons_data %}
+    <div class="modal fade" id="featuresModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark border-warning text-start" style="border: 1px solid var(--gold-bright);">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-warning fw-bold">Toggle Modules: {{ item.salon.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-secondary mb-3">If you turn a module OFF, the salon will get an "Access Denied" message if they try to use it.</p>
+                    
+                    <ul class="list-group list-group-flush bg-transparent">
+                        {% for setting in item.settings %}
+                        <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center border-secondary py-3">
+                            <span class="text-white text-uppercase fw-bold">{{ setting.feature_name.replace('_', ' ') }}</span>
+                            <form method="POST" class="m-0">
+                                <input type="hidden" name="action" value="toggle_feature">
+                                <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                                <input type="hidden" name="feature_name" value="{{ setting.feature_name }}">
+                                {% if setting.is_enabled %}
+                                    <button type="submit" class="btn btn-success btn-sm fw-bold px-3">ON</button>
+                                {% else %}
+                                    <button type="submit" class="btn btn-danger btn-sm fw-bold px-3">OFF</button>
+                                {% endif %}
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    </body>
+</html>
