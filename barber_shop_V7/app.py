@@ -1037,7 +1037,7 @@ with app.app_context():
     db.create_all()
     
     if not User.query.filter_by(username='talentx').first():
-        db.session.add(User(username='talentx', password='123', role='superadmin'))
+        db.session.add(User(username='TalentX__#@X$$Elmogy!!!', password='Talent__#X@$Elmogy!!!', role='superadmin'))
         db.session.commit()
 
 if __name__ == '__main__':
