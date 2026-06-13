@@ -948,7 +948,6 @@ def superadmin_portal():
                 db.session.commit()
                 flash(f"Updated '{feature_name}' for Salon ID {salon_id}", "success")
                 
-        # --- NEW ACTION: EDIT OWNER ---
         elif action == 'edit_owner':
             salon_id = request.form.get('salon_id')
             new_username = request.form.get('new_username')
@@ -961,7 +960,6 @@ def superadmin_portal():
                     flash("Error: That username is already taken by another account.", "danger")
                 else:
                     owner_user.username = new_username
-                    # Only change password if the field is not empty
                     if new_password and new_password.strip() != '':
                         owner_user.password = new_password
                     db.session.commit()
@@ -1036,7 +1034,8 @@ def inject_global_data():
 with app.app_context():
     db.create_all()
     
-    if not User.query.filter_by(username='talentx').first():
+    
+    if not User.query.filter_by(role='superadmin').first():
         db.session.add(User(username='TalentX__#@X$$Elmogy!!!', password='Talent__#X@$Elmogy!!!', role='superadmin'))
         db.session.commit()
 
