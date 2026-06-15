@@ -66,47 +66,75 @@
                     <h4 class="text-warning mb-4">🌍 Active Salons & Feature Toggles</h4>
                     <p class="text-secondary small">Manage access and specific features for all salons operating on the platform.</p>
                     
-                    <div class="table-responsive">
-                        <table class="table table-dark table-hover mt-3 align-middle">
+                    <div class="table-responsive" style="min-height: 350px;"> <table class="table table-dark table-hover mt-3 align-middle">
                             <thead>
                                 <tr>
                                     <th class="text-gold">Salon Name</th>
                                     <th class="text-gold">URL Link</th>
                                     <th class="text-gold">Owner Login</th>
-                                    <th class="text-gold">Status</th>
-                                    <th class="text-gold text-center">Modules</th>
+                                    <th class="text-gold text-center">Status</th>
+                                    <th class="text-gold text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for item in salons_data %}
                                 <tr>
-                                    <td class="fw-bold">{{ item.salon.name }}</td>
+                                    <td><span class="fw-bold">{{ item.salon.name }}</span></td>
                                     <td><a href="/book/{{ item.salon.slug }}" target="_blank" class="text-info">/{{ item.salon.slug }}</a></td>
-                                    <td>
-                                        <span class="fw-bold me-2">{{ item.owner_username }}</span>
-                                        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#editOwnerModal{{ item.salon.id }}">
-                                            ✏️ Edit
-                                        </button>
-                                    </td>
-                                    <td>
-                                        <form method="POST" class="m-0 d-inline">
-                                            <input type="hidden" name="action" value="toggle_status">
-                                            <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
-                                            {% if item.salon.is_active %}
-                                            <button type="submit" class="btn btn-sm btn-outline-success">Active</button>
-                                            {% else %}
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">Suspended</button>
-                                            {% endif %}
-                                        </form>
-                                    </td>
+                                    <td><span class="fw-bold">{{ item.owner_username }}</span></td>
                                     <td class="text-center">
-                                        <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#featuresModal{{ item.salon.id }}">
-                                            ⚙️ Manage
-                                        </button>
+                                        {% if item.salon.is_active %}
+                                            <span class="badge bg-success px-3 py-2 rounded-pill">Active</span>
+                                        {% else %}
+                                            <span class="badge bg-danger px-3 py-2 rounded-pill">Suspended</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-warning dropdown-toggle fw-bold px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                ⚙️ Actions
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow-lg" style="border: 1px solid var(--gold-bright);">
+                                                <li>
+                                                    <button class="dropdown-item text-primary py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#editSalonModal{{ item.salon.id }}">
+                                                        ✏️ Edit Salon Info
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item text-info py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#editOwnerModal{{ item.salon.id }}">
+                                                        👤 Edit Owner Login
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button class="dropdown-item text-warning py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#featuresModal{{ item.salon.id }}">
+                                                        🧩 Manage Modules
+                                                    </button>
+                                                </li>
+                                                <li><hr class="dropdown-divider border-secondary"></li>
+                                                <li class="px-2 py-1">
+                                                    <form method="POST" class="m-0">
+                                                        <input type="hidden" name="action" value="toggle_status">
+                                                        <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                                                        {% if item.salon.is_active %}
+                                                            <button type="submit" class="btn btn-sm btn-outline-secondary w-100 fw-bold">⏸ Suspend Salon</button>
+                                                        {% else %}
+                                                            <button type="submit" class="btn btn-sm btn-outline-success w-100 fw-bold">▶️ Activate Salon</button>
+                                                        {% endif %}
+                                                    </form>
+                                                </li>
+                                                <li class="px-2 pb-1">
+                                                    <form method="POST" class="m-0" onsubmit="return confirm('⚠️ WARNING: Are you sure you want to completely delete [ {{ item.salon.name }} ]?\n\nThis will permanently erase all their transactions, clients, inventory, and accounts. THIS CANNOT BE UNDONE!');">
+                                                        <input type="hidden" name="action" value="delete_salon">
+                                                        <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                                                        <button type="submit" class="btn btn-sm btn-danger w-100 fw-bold">🗑️ Delete Salon</button>
+                                                    </form>
+                                                </li>
+                                            </ul>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% else %}
-                                <tr><td colspan="5" class="text-center text-secondary">No salons registered yet.</td></tr>
+                                <tr><td colspan="5" class="text-center text-secondary py-4">No salons registered yet.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -175,6 +203,37 @@
                     <div class="modal-footer border-secondary">
                         <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-info fw-bold">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="editSalonModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark border-primary text-start" style="border: 1px solid #0d6efd;">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-primary fw-bold">Edit Salon Details: {{ item.salon.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="edit_salon">
+                        <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                        
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Salon Name</label>
+                            <input type="text" name="salon_name" class="form-control bg-dark text-white border-secondary" value="{{ item.salon.name }}" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="text-white small mb-1">Booking URL Slug</label>
+                            <input type="text" name="salon_slug" class="form-control bg-dark text-white border-secondary" value="{{ item.salon.slug }}" required>
+                            <small class="text-warning">⚠️ Warning: Changing this will change the client's public booking link!</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-bold">Save Changes</button>
                     </div>
                 </form>
             </div>

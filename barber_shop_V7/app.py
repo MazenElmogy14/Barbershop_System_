@@ -964,6 +964,46 @@ def superadmin_portal():
                         owner_user.password = new_password
                     db.session.commit()
                     flash(f"Owner credentials updated successfully for Salon ID {salon_id}!", "success")
+                    
+        # --- EDIT SALON INFO ---
+        elif action == 'edit_salon':
+            salon_id = request.form.get('salon_id')
+            new_name = request.form.get('salon_name')
+            new_slug = request.form.get('salon_slug').lower().replace(" ", "-")
+            
+            salon = Salon.query.get(salon_id)
+            if salon:
+                existing_slug = Salon.query.filter(Salon.slug == new_slug, Salon.id != salon.id).first()
+                if existing_slug:
+                    flash("Error: That URL slug is already used by another salon.", "danger")
+                else:
+                    salon.name = new_name
+                    salon.slug = new_slug
+                    db.session.commit()
+                    flash(f"Salon details updated successfully!", "success")
+
+        # --- DELETE SALON ---
+        elif action == 'delete_salon':
+            salon_id = request.form.get('salon_id')
+            salon = Salon.query.get(salon_id)
+            if salon:
+                # 1. Manually delete all connected tables to prevent Database Integrity Errors
+                TransactionService.query.filter(TransactionService.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
+                TransactionProduct.query.filter(TransactionProduct.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
+                Transaction.query.filter_by(salon_id=salon_id).delete()
+                ClientRequest.query.filter_by(salon_id=salon_id).delete()
+                Expense.query.filter_by(salon_id=salon_id).delete()
+                Service.query.filter_by(salon_id=salon_id).delete()
+                Product.query.filter_by(salon_id=salon_id).delete()
+                Client.query.filter_by(salon_id=salon_id).delete()
+                User.query.filter_by(salon_id=salon_id).delete()
+                Barber.query.filter_by(salon_id=salon_id).delete()
+                SystemSetting.query.filter_by(salon_id=salon_id).delete()
+                
+                # 2. Finally, delete the salon itself
+                db.session.delete(salon)
+                db.session.commit()
+                flash(f"Salon '{salon.name}' and all its data have been permanently deleted.", "success")
 
         return redirect(url_for('superadmin_portal'))
 
@@ -978,8 +1018,6 @@ def superadmin_portal():
         })
 
     return render_template('superadmin.html', salons_data=salons_data)
-
-
 # ==========================================
 # SYSTEM GLOBALS
 # ==========================================
