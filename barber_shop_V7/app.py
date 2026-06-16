@@ -7,8 +7,8 @@ import json
 from flask import make_response
 from weasyprint import HTML
 import os
+import calendar
 from werkzeug.utils import secure_filename
-import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'talentx-saas-secret-key'
@@ -30,6 +30,11 @@ class Salon(db.Model):
     slug = db.Column(db.String(100), unique=True, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.now)
+    
+    # --- NEW BILLING FIELDS ---
+    subscription_fee = db.Column(db.Float, default=0.0)
+    next_billing_date = db.Column(db.Date, nullable=True)
+    grace_period_days = db.Column(db.Integer, default=3)
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -143,15 +148,39 @@ class SystemSetting(db.Model):
     feature_name = db.Column(db.String(50), nullable=False)
     is_enabled = db.Column(db.Boolean, default=True)
 
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# --- HELPER TO CHECK IF FEATURE IS ENABLED ---
 def is_feature_enabled(salon_id, feature_name):
     setting = SystemSetting.query.filter_by(salon_id=salon_id, feature_name=feature_name).first()
     return setting.is_enabled if setting else True
+
+
+# ==========================================
+# GLOBAL AUTO-SUSPENSION HOOK
+# ==========================================
+@app.before_request
+def check_billing_and_suspension():
+    """Globally block logged-in users if their grace period expires."""
+    if current_user.is_authenticated and current_user.role != 'superadmin':
+        salon = Salon.query.get(current_user.salon_id)
+        if salon:
+            # Auto-suspend if past grace period
+            if salon.next_billing_date:
+                grace_end_date = salon.next_billing_date + timedelta(days=salon.grace_period_days)
+                if date.today() > grace_end_date and salon.is_active:
+                    salon.is_active = False
+                    db.session.commit()
+
+            # If suspended, force logout and show dynamic message
+            if not salon.is_active and request.endpoint not in ['login', 'logout', 'static']:
+                logout_user()
+                if salon.next_billing_date and date.today() > (salon.next_billing_date + timedelta(days=salon.grace_period_days)):
+                    flash(f'⚠️ System Suspended: Please pay your monthly fee of ${salon.subscription_fee:.2f} to restore access.', 'danger')
+                else:
+                    flash('Your salon account is currently suspended. Contact support.', 'danger')
+                return redirect(url_for('login'))
 
 
 # ==========================================
@@ -216,8 +245,19 @@ def login():
         if user:
             if user.salon_id:
                 salon = Salon.query.get(user.salon_id)
+                
+                # Check auto-suspension during login attempt
+                if salon.next_billing_date:
+                    grace_end = salon.next_billing_date + timedelta(days=salon.grace_period_days)
+                    if date.today() > grace_end and salon.is_active:
+                        salon.is_active = False
+                        db.session.commit()
+
                 if not salon.is_active:
-                    flash('Your salon account is currently suspended. Contact support.')
+                    if salon.next_billing_date and date.today() > (salon.next_billing_date + timedelta(days=salon.grace_period_days)):
+                        flash(f'⚠️ System Suspended: Please pay your monthly fee of ${salon.subscription_fee:.2f} to restore access.', 'danger')
+                    else:
+                        flash('Your salon account is currently suspended. Contact support.', 'danger')
                     return render_template('login.html')
 
             login_user(user)
@@ -229,7 +269,7 @@ def login():
                 return redirect(url_for('barber_dashboard'))
             else:
                 return redirect(url_for('cashier'))
-        flash('Invalid credentials')
+        flash('Invalid credentials', 'danger')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -887,7 +927,7 @@ def upload_request_photo(req_id):
     return redirect(request.referrer)
 
 # ==========================================
-# SAAS MASTER PORTAL (WITH FEATURE TOGGLES)
+# SAAS MASTER PORTAL (WITH FEATURE TOGGLES & BILLING)
 # ==========================================
 AVAILABLE_FEATURES = [
     'online_booking', 'loyalty_points', 'pdf_report', 
@@ -910,14 +950,27 @@ def superadmin_portal():
     if request.method == 'POST':
         action = request.form.get('action')
         
+        # --- REGISTER SALON ---
         if action == 'register_salon':
             salon_name = request.form.get('salon_name')
             salon_slug = request.form.get('salon_slug').lower().replace(" ", "-")
             
+            # Capture new billing fields
+            sub_fee = float(request.form.get('subscription_fee', 0.0))
+            grace_days = int(request.form.get('grace_period_days', 3))
+            billing_date_str = request.form.get('next_billing_date')
+            billing_date = datetime.strptime(billing_date_str, '%Y-%m-%d').date() if billing_date_str else None
+            
             if Salon.query.filter_by(slug=salon_slug).first():
                 flash("Error: Salon URL slug is already taken. Choose another.", "danger")
             else:
-                new_salon = Salon(name=salon_name, slug=salon_slug)
+                new_salon = Salon(
+                    name=salon_name, 
+                    slug=salon_slug,
+                    subscription_fee=sub_fee,
+                    next_billing_date=billing_date,
+                    grace_period_days=grace_days
+                )
                 db.session.add(new_salon)
                 db.session.flush() 
                 
@@ -931,6 +984,7 @@ def superadmin_portal():
                 db.session.commit()
                 flash(f"Successfully registered Salon: {salon_name}", "success")
                 
+        # --- TOGGLE STATUS ---
         elif action == 'toggle_status':
             salon_id = request.form.get('salon_id')
             salon = Salon.query.get(salon_id)
@@ -939,6 +993,7 @@ def superadmin_portal():
                 db.session.commit()
                 flash(f"Salon status updated.", "success")
                 
+        # --- TOGGLE FEATURE ---
         elif action == 'toggle_feature':
             salon_id = request.form.get('salon_id')
             feature_name = request.form.get('feature_name')
@@ -948,6 +1003,7 @@ def superadmin_portal():
                 db.session.commit()
                 flash(f"Updated '{feature_name}' for Salon ID {salon_id}", "success")
                 
+        # --- EDIT OWNER ---
         elif action == 'edit_owner':
             salon_id = request.form.get('salon_id')
             new_username = request.form.get('new_username')
@@ -982,12 +1038,66 @@ def superadmin_portal():
                     db.session.commit()
                     flash(f"Salon details updated successfully!", "success")
 
+        # --- UPDATE BILLING ---
+        elif action == 'update_billing':
+            salon_id = request.form.get('salon_id')
+            salon = Salon.query.get(salon_id)
+            if salon:
+                salon.subscription_fee = float(request.form.get('subscription_fee', 0.0))
+                salon.grace_period_days = int(request.form.get('grace_period_days', 3))
+                
+                date_str = request.form.get('next_billing_date')
+                if date_str:
+                    salon.next_billing_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    salon.next_billing_date = None
+                
+                # Auto-reactivate if they pay and extend the date into the future
+                if salon.next_billing_date:
+                    grace_end = salon.next_billing_date + timedelta(days=salon.grace_period_days)
+                    if date.today() <= grace_end:
+                        salon.is_active = True
+                        
+                db.session.commit()
+                flash(f"Billing updated for {salon.name}. Next due date: {salon.next_billing_date}", "success")
+
+        # --- 1-CLICK MARK AS PAID ---
+        elif action == 'mark_paid':
+            salon_id = request.form.get('salon_id')
+            salon = Salon.query.get(salon_id)
+            if salon:
+                if salon.next_billing_date:
+                    # Advance the billing date by exactly 1 month
+                    month = salon.next_billing_date.month
+                    year = salon.next_billing_date.year
+                    day = salon.next_billing_date.day
+                    
+                    month += 1
+                    if month > 12:
+                        month = 1
+                        year += 1
+                        
+                    # Prevent setting invalid dates like Feb 30th
+                    max_day = calendar.monthrange(year, month)[1]
+                    day = min(day, max_day)
+                    
+                    salon.next_billing_date = date(year, month, day)
+                else:
+                    # If they never had a billing date, default to 30 days from today
+                    salon.next_billing_date = date.today() + timedelta(days=30)
+                
+                # Reactivate the salon instantly if they were suspended
+                salon.is_active = True
+                db.session.commit()
+                
+                flash(f"✅ Payment recorded for '{salon.name}'! Next billing date advanced to {salon.next_billing_date}.", "success")
+
         # --- DELETE SALON ---
         elif action == 'delete_salon':
             salon_id = request.form.get('salon_id')
             salon = Salon.query.get(salon_id)
             if salon:
-                # 1. Manually delete all connected tables to prevent Database Integrity Errors
+                # Manually delete all connected tables to prevent Database Integrity Errors
                 TransactionService.query.filter(TransactionService.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
                 TransactionProduct.query.filter(TransactionProduct.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
                 Transaction.query.filter_by(salon_id=salon_id).delete()
@@ -1000,7 +1110,7 @@ def superadmin_portal():
                 Barber.query.filter_by(salon_id=salon_id).delete()
                 SystemSetting.query.filter_by(salon_id=salon_id).delete()
                 
-                # 2. Finally, delete the salon itself
+                # Finally, delete the salon itself
                 db.session.delete(salon)
                 db.session.commit()
                 flash(f"Salon '{salon.name}' and all its data have been permanently deleted.", "success")
@@ -1018,6 +1128,7 @@ def superadmin_portal():
         })
 
     return render_template('superadmin.html', salons_data=salons_data)
+
 # ==========================================
 # SYSTEM GLOBALS
 # ==========================================
@@ -1071,7 +1182,6 @@ def inject_global_data():
 
 with app.app_context():
     db.create_all()
-    
     
     if not User.query.filter_by(role='superadmin').first():
         db.session.add(User(username='TalentX__#@X$$Elmogy!!!', password='Talent__#X@$Elmogy!!!', role='superadmin'))

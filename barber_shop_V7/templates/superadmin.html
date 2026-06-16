@@ -26,6 +26,7 @@
         {% endwith %}
 
         <div class="row">
+            <!-- REGISTER NEW SALON -->
             <div class="col-md-4 mb-4">
                 <div class="luxury-card border-success" style="border: 1px solid;">
                     <h4 class="text-success mb-4">🏢 Register New Tenant</h4>
@@ -56,17 +57,36 @@
                             <input type="text" name="owner_password" class="form-control bg-dark text-white border-secondary" required placeholder="password">
                         </div>
 
+                        <hr class="border-secondary">
+                        <h6 class="text-success mb-3">Financial & Billing Settings</h6>
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Monthly Subscription Fee ($)</label>
+                            <input type="number" step="0.01" name="subscription_fee" class="form-control bg-dark text-white border-secondary" value="50.00" required>
+                        </div>
+                        <div class="row mb-4">
+                            <div class="col-6">
+                                <label class="text-white small mb-1">First Billing Date</label>
+                                <input type="date" name="next_billing_date" class="form-control bg-dark text-white border-secondary">
+                            </div>
+                            <div class="col-6">
+                                <label class="text-white small mb-1">Grace Period (Days)</label>
+                                <input type="number" name="grace_period_days" class="form-control bg-dark text-white border-secondary" value="3" required>
+                            </div>
+                        </div>
+
                         <button type="submit" class="btn btn-success w-100 fw-bold">Register & Deploy System</button>
                     </form>
                 </div>
             </div>
 
+            <!-- ALL TENANTS LIST -->
             <div class="col-md-8 mb-4">
                 <div class="luxury-card border-warning" style="border: 1px solid;">
                     <h4 class="text-warning mb-4">🌍 Active Salons & Feature Toggles</h4>
                     <p class="text-secondary small">Manage access and specific features for all salons operating on the platform.</p>
                     
-                    <div class="table-responsive" style="min-height: 350px;"> <table class="table table-dark table-hover mt-3 align-middle">
+                    <div class="table-responsive" style="min-height: 350px;"> <!-- Min-height prevents dropdown from clipping -->
+                        <table class="table table-dark table-hover mt-3 align-middle">
                             <thead>
                                 <tr>
                                     <th class="text-gold">Salon Name</th>
@@ -90,6 +110,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">
+                                        <!-- ORGANIZED ACTIONS DROPDOWN -->
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-warning dropdown-toggle fw-bold px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                                 ⚙️ Actions
@@ -106,23 +127,40 @@
                                                     </button>
                                                 </li>
                                                 <li>
+                                                    <button class="dropdown-item text-success py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#billingModal{{ item.salon.id }}">
+                                                        💳 Manage Billing
+                                                    </button>
+                                                </li>
+                                                <li>
                                                     <button class="dropdown-item text-warning py-2 fw-bold" data-bs-toggle="modal" data-bs-target="#featuresModal{{ item.salon.id }}">
                                                         🧩 Manage Modules
                                                     </button>
                                                 </li>
                                                 <li><hr class="dropdown-divider border-secondary"></li>
+                                                
+                                                <!-- 1-CLICK MARK AS PAID BUTTON -->
                                                 <li class="px-2 py-1">
+                                                    <form method="POST" class="m-0" onsubmit="return confirm('Confirm payment received? This will reactivate the salon and extend their billing date by 1 month.');">
+                                                        <input type="hidden" name="action" value="mark_paid">
+                                                        <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-success w-100 fw-bold">✅ Mark Paid (+1 Month)</button>
+                                                    </form>
+                                                </li>
+
+                                                <li class="px-2 py-1">
+                                                    <!-- Suspend/Activate Button -->
                                                     <form method="POST" class="m-0">
                                                         <input type="hidden" name="action" value="toggle_status">
                                                         <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
                                                         {% if item.salon.is_active %}
                                                             <button type="submit" class="btn btn-sm btn-outline-secondary w-100 fw-bold">⏸ Suspend Salon</button>
                                                         {% else %}
-                                                            <button type="submit" class="btn btn-sm btn-outline-success w-100 fw-bold">▶️ Activate Salon</button>
+                                                            <button type="submit" class="btn btn-sm btn-outline-info w-100 fw-bold">▶️ Manual Activate</button>
                                                         {% endif %}
                                                     </form>
                                                 </li>
                                                 <li class="px-2 pb-1">
+                                                    <!-- Delete Button -->
                                                     <form method="POST" class="m-0" onsubmit="return confirm('⚠️ WARNING: Are you sure you want to completely delete [ {{ item.salon.name }} ]?\n\nThis will permanently erase all their transactions, clients, inventory, and accounts. THIS CANNOT BE UNDONE!');">
                                                         <input type="hidden" name="action" value="delete_salon">
                                                         <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
@@ -144,8 +182,10 @@
         </div>
     </div>
 
+    <!-- MODALS PLACED OUTSIDE THE SCROLLABLE TABLE -->
     {% for item in salons_data %}
     
+    <!-- 1. Features Modal -->
     <div class="modal fade" id="featuresModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-warning text-start" style="border: 1px solid var(--gold-bright);">
@@ -178,6 +218,7 @@
         </div>
     </div>
 
+    <!-- 2. Edit Owner Credentials Modal -->
     <div class="modal fade" id="editOwnerModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-info text-start" style="border: 1px solid #0dcaf0;">
@@ -209,6 +250,7 @@
         </div>
     </div>
 
+    <!-- 3. Edit Salon Information Modal -->
     <div class="modal fade" id="editSalonModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-primary text-start" style="border: 1px solid #0d6efd;">
@@ -240,6 +282,44 @@
         </div>
     </div>
 
+    <!-- 4. Manage Billing Modal -->
+    <div class="modal fade" id="billingModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark border-success text-start" style="border: 1px solid #198754;">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-success fw-bold">Manage Billing: {{ item.salon.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="action" value="update_billing">
+                        <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
+                        
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Monthly Subscription Fee ($)</label>
+                            <input type="number" step="0.01" name="subscription_fee" class="form-control bg-dark text-white border-secondary" value="{{ item.salon.subscription_fee }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="text-white small mb-1">Next Billing Date</label>
+                            <input type="date" name="next_billing_date" class="form-control bg-dark text-white border-secondary" value="{{ item.salon.next_billing_date if item.salon.next_billing_date else '' }}">
+                            <small class="text-secondary">Update this to the next month when the client pays to lift any suspensions.</small>
+                        </div>
+                        <div class="mb-2">
+                            <label class="text-white small mb-1">Grace Period (Days before auto-suspension)</label>
+                            <input type="number" name="grace_period_days" class="form-control bg-dark text-white border-secondary" value="{{ item.salon.grace_period_days }}" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success fw-bold">Save Billing Info</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     {% endfor %}
-    </body>
+    <!-- End Modals -->
+
+</body>
 </html>
