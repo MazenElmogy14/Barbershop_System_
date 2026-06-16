@@ -61,6 +61,23 @@
     </nav>
 
     <div class="container py-4 pos-container">
+        
+        {% if active_announcements %}
+            <div class="mb-4 animate-fade">
+            {% for ann in active_announcements %}
+                <div class="alert {% if ann.is_pinned %}alert-danger border-danger{% else %}alert-info border-info{% endif %} d-flex align-items-center shadow-lg" role="alert" style="border-width: 2px;">
+                    <div class="fs-2 me-3">
+                        {% if ann.is_pinned %}📌{% else %}📢{% endif %}
+                    </div>
+                    <div>
+                        <h5 class="alert-heading fw-bold mb-1">{{ ann.title }}</h5>
+                        <p class="mb-0 text-dark">{{ ann.message }}</p>
+                    </div>
+                </div>
+            {% endfor %}
+            </div>
+        {% endif %}
+
         <form method="POST" class="luxury-card">
             
             <div class="text-center mb-4">

@@ -2,13 +2,13 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from datetime import datetime, date, timedelta, time
-from sqlalchemy import func
+import calendar
 import json
 from flask import make_response
 from weasyprint import HTML
 import os
-import calendar
 from werkzeug.utils import secure_filename
+import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'talentx-saas-secret-key'
@@ -31,7 +31,7 @@ class Salon(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.now)
     
-    # --- NEW BILLING FIELDS ---
+    # --- BILLING FIELDS ---
     subscription_fee = db.Column(db.Float, default=0.0)
     next_billing_date = db.Column(db.Date, nullable=True)
     grace_period_days = db.Column(db.Integer, default=3)
@@ -148,6 +148,18 @@ class SystemSetting(db.Model):
     feature_name = db.Column(db.String(50), nullable=False)
     is_enabled = db.Column(db.Boolean, default=True)
 
+# --- NEW: ANNOUNCEMENT MODEL ---
+class Announcement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    target_salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=True) 
+    is_pinned = db.Column(db.Boolean, default=False)
+    expiry_date = db.Column(db.Date, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+
+    salon = db.relationship('Salon', backref='announcements')
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -155,7 +167,6 @@ def load_user(user_id):
 def is_feature_enabled(salon_id, feature_name):
     setting = SystemSetting.query.filter_by(salon_id=salon_id, feature_name=feature_name).first()
     return setting.is_enabled if setting else True
-
 
 # ==========================================
 # GLOBAL AUTO-SUSPENSION HOOK
@@ -166,14 +177,12 @@ def check_billing_and_suspension():
     if current_user.is_authenticated and current_user.role != 'superadmin':
         salon = Salon.query.get(current_user.salon_id)
         if salon:
-            # Auto-suspend if past grace period
             if salon.next_billing_date:
                 grace_end_date = salon.next_billing_date + timedelta(days=salon.grace_period_days)
                 if date.today() > grace_end_date and salon.is_active:
                     salon.is_active = False
                     db.session.commit()
 
-            # If suspended, force logout and show dynamic message
             if not salon.is_active and request.endpoint not in ['login', 'logout', 'static']:
                 logout_user()
                 if salon.next_billing_date and date.today() > (salon.next_billing_date + timedelta(days=salon.grace_period_days)):
@@ -246,7 +255,6 @@ def login():
             if user.salon_id:
                 salon = Salon.query.get(user.salon_id)
                 
-                # Check auto-suspension during login attempt
                 if salon.next_billing_date:
                     grace_end = salon.next_billing_date + timedelta(days=salon.grace_period_days)
                     if date.today() > grace_end and salon.is_active:
@@ -955,7 +963,6 @@ def superadmin_portal():
             salon_name = request.form.get('salon_name')
             salon_slug = request.form.get('salon_slug').lower().replace(" ", "-")
             
-            # Capture new billing fields
             sub_fee = float(request.form.get('subscription_fee', 0.0))
             grace_days = int(request.form.get('grace_period_days', 3))
             billing_date_str = request.form.get('next_billing_date')
@@ -1052,7 +1059,6 @@ def superadmin_portal():
                 else:
                     salon.next_billing_date = None
                 
-                # Auto-reactivate if they pay and extend the date into the future
                 if salon.next_billing_date:
                     grace_end = salon.next_billing_date + timedelta(days=salon.grace_period_days)
                     if date.today() <= grace_end:
@@ -1067,7 +1073,6 @@ def superadmin_portal():
             salon = Salon.query.get(salon_id)
             if salon:
                 if salon.next_billing_date:
-                    # Advance the billing date by exactly 1 month
                     month = salon.next_billing_date.month
                     year = salon.next_billing_date.year
                     day = salon.next_billing_date.day
@@ -1077,27 +1082,54 @@ def superadmin_portal():
                         month = 1
                         year += 1
                         
-                    # Prevent setting invalid dates like Feb 30th
                     max_day = calendar.monthrange(year, month)[1]
                     day = min(day, max_day)
                     
                     salon.next_billing_date = date(year, month, day)
                 else:
-                    # If they never had a billing date, default to 30 days from today
                     salon.next_billing_date = date.today() + timedelta(days=30)
                 
-                # Reactivate the salon instantly if they were suspended
                 salon.is_active = True
                 db.session.commit()
                 
                 flash(f"✅ Payment recorded for '{salon.name}'! Next billing date advanced to {salon.next_billing_date}.", "success")
+
+        # --- CREATE ANNOUNCEMENT ---
+        elif action == 'create_announcement':
+            title = request.form.get('title')
+            message = request.form.get('message')
+            target_salon = request.form.get('target_salon_id')
+            is_pinned = 'is_pinned' in request.form
+            days_active = int(request.form.get('days_active', 1))
+            
+            salon_id = int(target_salon) if target_salon else None
+            expiry = date.today() + timedelta(days=days_active)
+            
+            new_ann = Announcement(
+                title=title,
+                message=message,
+                target_salon_id=salon_id,
+                is_pinned=is_pinned,
+                expiry_date=expiry
+            )
+            db.session.add(new_ann)
+            db.session.commit()
+            flash("📢 Announcement broadcasted successfully!", "success")
+            
+        # --- DELETE ANNOUNCEMENT ---
+        elif action == 'delete_announcement':
+            ann_id = request.form.get('announcement_id')
+            ann = Announcement.query.get(ann_id)
+            if ann:
+                db.session.delete(ann)
+                db.session.commit()
+                flash("Announcement deleted.", "info")
 
         # --- DELETE SALON ---
         elif action == 'delete_salon':
             salon_id = request.form.get('salon_id')
             salon = Salon.query.get(salon_id)
             if salon:
-                # Manually delete all connected tables to prevent Database Integrity Errors
                 TransactionService.query.filter(TransactionService.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
                 TransactionProduct.query.filter(TransactionProduct.transaction.has(salon_id=salon_id)).delete(synchronize_session=False)
                 Transaction.query.filter_by(salon_id=salon_id).delete()
@@ -1110,7 +1142,6 @@ def superadmin_portal():
                 Barber.query.filter_by(salon_id=salon_id).delete()
                 SystemSetting.query.filter_by(salon_id=salon_id).delete()
                 
-                # Finally, delete the salon itself
                 db.session.delete(salon)
                 db.session.commit()
                 flash(f"Salon '{salon.name}' and all its data have been permanently deleted.", "success")
@@ -1127,7 +1158,8 @@ def superadmin_portal():
             'settings': settings
         })
 
-    return render_template('superadmin.html', salons_data=salons_data)
+    announcements = Announcement.query.order_by(Announcement.created_at.desc()).all()
+    return render_template('superadmin.html', salons_data=salons_data, announcements=announcements, now=datetime.now)
 
 # ==========================================
 # SYSTEM GLOBALS
@@ -1168,6 +1200,7 @@ def inject_global_data():
         
     low_stock_count = 0
     features = {}
+    active_announcements = []
     
     if current_user.is_authenticated and current_user.role != 'superadmin':
         low_stock_count = Product.query.filter(Product.salon_id==current_user.salon_id, Product.is_active == True, Product.stock <= Product.low_stock_threshold).count()
@@ -1177,8 +1210,16 @@ def inject_global_data():
                 features[s.feature_name] = s.is_enabled
         except:
             pass
+            
+        # --- FETCH RELEVANT ANNOUNCEMENTS ---
+        if current_user.salon_id:
+            today = date.today()
+            active_announcements = Announcement.query.filter(
+                Announcement.expiry_date >= today,
+                (Announcement.target_salon_id == None) | (Announcement.target_salon_id == current_user.salon_id)
+            ).order_by(Announcement.is_pinned.desc(), Announcement.created_at.desc()).all()
 
-    return dict(t=t, current_lang=lang, low_stock_count=low_stock_count, features=features)
+    return dict(t=t, current_lang=lang, low_stock_count=low_stock_count, features=features, active_announcements=active_announcements)
 
 with app.app_context():
     db.create_all()

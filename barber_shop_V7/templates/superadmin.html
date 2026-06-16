@@ -26,7 +26,6 @@
         {% endwith %}
 
         <div class="row">
-            <!-- REGISTER NEW SALON -->
             <div class="col-md-4 mb-4">
                 <div class="luxury-card border-success" style="border: 1px solid;">
                     <h4 class="text-success mb-4">🏢 Register New Tenant</h4>
@@ -79,14 +78,12 @@
                 </div>
             </div>
 
-            <!-- ALL TENANTS LIST -->
             <div class="col-md-8 mb-4">
                 <div class="luxury-card border-warning" style="border: 1px solid;">
                     <h4 class="text-warning mb-4">🌍 Active Salons & Feature Toggles</h4>
                     <p class="text-secondary small">Manage access and specific features for all salons operating on the platform.</p>
                     
-                    <div class="table-responsive" style="min-height: 350px;"> <!-- Min-height prevents dropdown from clipping -->
-                        <table class="table table-dark table-hover mt-3 align-middle">
+                    <div class="table-responsive" style="min-height: 350px;"> <table class="table table-dark table-hover mt-3 align-middle">
                             <thead>
                                 <tr>
                                     <th class="text-gold">Salon Name</th>
@@ -110,7 +107,6 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">
-                                        <!-- ORGANIZED ACTIONS DROPDOWN -->
                                         <div class="dropdown">
                                             <button class="btn btn-sm btn-outline-warning dropdown-toggle fw-bold px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                                 ⚙️ Actions
@@ -138,7 +134,6 @@
                                                 </li>
                                                 <li><hr class="dropdown-divider border-secondary"></li>
                                                 
-                                                <!-- 1-CLICK MARK AS PAID BUTTON -->
                                                 <li class="px-2 py-1">
                                                     <form method="POST" class="m-0" onsubmit="return confirm('Confirm payment received? This will reactivate the salon and extend their billing date by 1 month.');">
                                                         <input type="hidden" name="action" value="mark_paid">
@@ -148,7 +143,6 @@
                                                 </li>
 
                                                 <li class="px-2 py-1">
-                                                    <!-- Suspend/Activate Button -->
                                                     <form method="POST" class="m-0">
                                                         <input type="hidden" name="action" value="toggle_status">
                                                         <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
@@ -160,7 +154,6 @@
                                                     </form>
                                                 </li>
                                                 <li class="px-2 pb-1">
-                                                    <!-- Delete Button -->
                                                     <form method="POST" class="m-0" onsubmit="return confirm('⚠️ WARNING: Are you sure you want to completely delete [ {{ item.salon.name }} ]?\n\nThis will permanently erase all their transactions, clients, inventory, and accounts. THIS CANNOT BE UNDONE!');">
                                                         <input type="hidden" name="action" value="delete_salon">
                                                         <input type="hidden" name="salon_id" value="{{ item.salon.id }}">
@@ -179,13 +172,108 @@
                     </div>
                 </div>
             </div>
+            
+            <div class="col-12 mb-4">
+                <div class="luxury-card border-info" style="border: 1px solid;">
+                    <h4 class="text-info mb-4">📢 Global Broadcast & Messaging</h4>
+                    <p class="text-secondary small">Send pinned alerts, warnings, or updates to all tenants or a specific salon. Messages automatically disappear after the set days.</p>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <form method="POST" class="bg-dark p-3 rounded" style="border: 1px dashed var(--gold-bright);">
+                                <input type="hidden" name="action" value="create_announcement">
+                                
+                                <div class="mb-2">
+                                    <label class="text-white small">Target Audience</label>
+                                    <select name="target_salon_id" class="form-select bg-dark text-white border-secondary">
+                                        <option value="">🌍 ALL SALONS (Global Broadcast)</option>
+                                        {% for item in salons_data %}
+                                            <option value="{{ item.salon.id }}">🏢 {{ item.salon.name }} Only</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="text-white small">Message Title</label>
+                                    <input type="text" name="title" class="form-control bg-dark text-white border-secondary" required placeholder="e.g., Billing Reminder">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="text-white small">Message Content</label>
+                                    <textarea name="message" class="form-control bg-dark text-white border-secondary" rows="3" required placeholder="Type your message here..."></textarea>
+                                </div>
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <label class="text-white small">Days Active</label>
+                                        <input type="number" name="days_active" class="form-control bg-dark text-white border-secondary" value="3" min="1" required>
+                                    </div>
+                                    <div class="col-6 d-flex align-items-end">
+                                        <div class="form-check">
+                                            <input class="form-check-input border-danger" type="checkbox" name="is_pinned" id="isPinned" value="1">
+                                            <label class="form-check-label text-danger fw-bold small" for="isPinned">
+                                                📌 Pin Message (Red)
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-info w-100 fw-bold">Send Broadcast 🚀</button>
+                            </form>
+                        </div>
+                        
+                        <div class="col-md-8">
+                            <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                                <table class="table table-dark table-hover align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-gold">Date</th>
+                                            <th class="text-gold">Target</th>
+                                            <th class="text-gold">Message</th>
+                                            <th class="text-gold">Expires</th>
+                                            <th class="text-end text-gold">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for ann in announcements %}
+                                        <tr>
+                                            <td class="text-secondary small">{{ ann.created_at.strftime('%Y-%m-%d') }}</td>
+                                            <td>
+                                                {% if ann.target_salon_id %}
+                                                    <span class="badge bg-secondary">{{ ann.salon.name }}</span>
+                                                {% else %}
+                                                    <span class="badge bg-primary">🌍 ALL SALONS</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <strong>{% if ann.is_pinned %}📌{% endif %} {{ ann.title }}</strong><br>
+                                                <small class="text-secondary">{{ ann.message[:40] }}...</small>
+                                            </td>
+                                            <td>
+                                                <span class="badge {% if ann.expiry_date >= now().date() %}bg-success{% else %}bg-secondary{% endif %}">
+                                                    {{ ann.expiry_date.strftime('%Y-%m-%d') }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <form method="POST" class="m-0" onsubmit="return confirm('Delete this announcement?');">
+                                                    <input type="hidden" name="action" value="delete_announcement">
+                                                    <input type="hidden" name="announcement_id" value="{{ ann.id }}">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger border-0">🗑️</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% else %}
+                                        <tr><td colspan="5" class="text-center text-secondary py-3">No announcements yet.</td></tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
         </div>
     </div>
 
-    <!-- MODALS PLACED OUTSIDE THE SCROLLABLE TABLE -->
     {% for item in salons_data %}
     
-    <!-- 1. Features Modal -->
     <div class="modal fade" id="featuresModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-warning text-start" style="border: 1px solid var(--gold-bright);">
@@ -218,7 +306,6 @@
         </div>
     </div>
 
-    <!-- 2. Edit Owner Credentials Modal -->
     <div class="modal fade" id="editOwnerModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-info text-start" style="border: 1px solid #0dcaf0;">
@@ -250,7 +337,6 @@
         </div>
     </div>
 
-    <!-- 3. Edit Salon Information Modal -->
     <div class="modal fade" id="editSalonModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-primary text-start" style="border: 1px solid #0d6efd;">
@@ -282,7 +368,6 @@
         </div>
     </div>
 
-    <!-- 4. Manage Billing Modal -->
     <div class="modal fade" id="billingModal{{ item.salon.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-success text-start" style="border: 1px solid #198754;">
@@ -319,7 +404,5 @@
     </div>
 
     {% endfor %}
-    <!-- End Modals -->
-
-</body>
+    </body>
 </html>
